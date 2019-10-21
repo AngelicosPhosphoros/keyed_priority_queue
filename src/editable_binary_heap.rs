@@ -29,11 +29,11 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
     /// Puts key and priority in queue, returns its final position
     /// Calls change_handler for every move of old values
-    pub fn push(
+    pub fn push<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         key: TKey,
         priority: TPriority,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        mut change_handler: TChangeHandler,
     ) {
         self.data.push(HeapEntry { key, priority });
         change_handler(&self.data.last().unwrap().key, self.data.len() - 1);
@@ -42,9 +42,9 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
     /// Removes item with the biggest priority
     /// Time complexity - O(log n) swaps and change_handler calls
-    pub fn pop(
+    pub fn pop<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        change_handler: TChangeHandler,
     ) -> Option<(TKey, TPriority)> {
         self.remove(0, change_handler)
     }
@@ -55,10 +55,10 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
     /// Removes item at position and returns it
     /// Time complexity - O(log n) swaps and change_handler calls
-    pub fn remove(
+    pub fn remove<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        mut change_handler: TChangeHandler,
     ) -> Option<(TKey, TPriority)> {
         if self.data.len() <= position {
             return None;
@@ -67,7 +67,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
             let result = self.data.pop().unwrap();
             return Some((result.key, result.priority));
         }
-        self.swap_items(position, self.data.len() - 1, change_handler);
+        self.swap_items(position, self.data.len() - 1, &mut change_handler);
         let result = self.data.pop().unwrap();
         self.heapify_down(position, change_handler);
         Some((result.key, result.priority))
@@ -83,11 +83,11 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
     }
 
     /// Changes priority of queue item
-    pub fn change_priority(
+    pub fn change_priority<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
         updated: TPriority,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        change_handler: TChangeHandler,
     ) {
         if position >= self.data.len() {
             return;
@@ -109,17 +109,17 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         self.data.len()
     }
 
-    fn heapify_up(
+    fn heapify_up<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        mut change_handler: TChangeHandler,
     ) {
         debug_assert!(position < self.data.len(), "Out of index in heapify_up");
         let mut position = position;
         while position > 0 {
             let parent_pos = (position - 1) >> 1;
             if self.data[parent_pos].priority < self.data[position].priority {
-                self.swap_items(parent_pos, position, change_handler);
+                self.swap_items(parent_pos, position, &mut change_handler);
                 position = parent_pos;
             } else {
                 break;
@@ -127,10 +127,10 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         }
     }
 
-    fn heapify_down(
+    fn heapify_down<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        mut change_handler: TChangeHandler,
     ) {
         debug_assert!(position < self.data.len(), "Out of index in heapify_down");
         let mut position = position;
@@ -151,7 +151,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
             };
 
             if self.data[position].priority < self.data[max_child_idx].priority {
-                self.swap_items(position, max_child_idx, change_handler);
+                self.swap_items(position, max_child_idx, &mut change_handler);
                 position = max_child_idx;
             } else {
                 break;
@@ -159,11 +159,11 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         }
     }
 
-    fn swap_items(
+    fn swap_items<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         pos1: usize,
         pos2: usize,
-        change_handler: &mut dyn std::ops::FnMut(&TKey, usize),
+        change_handler: &mut TChangeHandler,
     ) {
         debug_assert!(pos1 < self.data.len(), "Out of index in first pos in swap");
         debug_assert!(pos2 < self.data.len(), "Out of index in second pos in swap");
@@ -195,7 +195,7 @@ impl<TKey, TPriority: Ord> FromIterator<(TKey, TPriority)> for BinaryHeap<TKey, 
         let mut res = Self { data };
         let heapify_start = std::cmp::min(res.data.len() / 2 + 2, res.data.len());
         for i in (0..heapify_start).rev() {
-            res.heapify_down(i, &mut |_, _| {});
+            res.heapify_down(i, |_, _| {});
         }
         res
     }
@@ -276,7 +276,7 @@ mod tests {
             if x > maximum {
                 maximum = x;
             }
-            heap.push((), x, &mut |_, _| {});
+            heap.push((), x, |_, _| {});
             assert!(
                 is_valid_heap(&heap),
                 "Heap state is invalid after pushing {}",
@@ -374,17 +374,17 @@ mod tests {
 
         let mut heap = BinaryHeap::<i32, i32>::new();
         for &x in items.iter() {
-            heap.push(x, x, &mut |_, _| {});
+            heap.push(x, x, |_, _| {});
         }
         assert!(is_valid_heap(&heap), "Heap is invalid before pops");
 
         items.sort_unstable_by_key(|&x| Reverse(x));
         for &x in items.iter() {
-            assert_eq!(heap.pop(&mut |_, _| {}), Some((x, x)));
+            assert_eq!(heap.pop(|_, _| {}), Some((x, x)));
             assert!(is_valid_heap(&heap), "Heap is invalid after {}", x);
         }
 
-        assert_eq!(heap.pop(&mut |_, _| {}), None);
+        assert_eq!(heap.pop(|_, _| {}), None);
     }
 
     #[test]
@@ -399,9 +399,9 @@ mod tests {
 
         let mut heap: BinaryHeap<&str, i32> = pairs.iter().cloned().collect();
         assert!(is_valid_heap(&heap), "Invalid before change");
-        heap.change_priority(3, 10, &mut |_, _| {});
+        heap.change_priority(3, 10, |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after upping");
-        heap.change_priority(21, -10, &mut |_, _| {});
+        heap.change_priority(21, -10, |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after lowering");
     }
 

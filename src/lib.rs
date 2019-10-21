@@ -40,12 +40,12 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
             None => {
                 // It will be rewritten during binary heap rebalancing.
                 key_to_pos.insert(key.clone(), std::usize::MAX);
-                heap.push(key, priority, &mut |changed, pos| {
+                heap.push(key, priority, |changed, pos| {
                     *key_to_pos.get_mut(changed).unwrap() = pos;
                 })
             }
             Some(&index) => {
-                heap.change_priority(index, priority, &mut |changed, pos| {
+                heap.change_priority(index, priority, |changed, pos| {
                     *key_to_pos.get_mut(changed).unwrap() = pos;
                 });
             }
@@ -55,7 +55,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     pub fn pop(&mut self) -> Option<(TKey, TPriority)> {
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
-        let key_priority = heap.pop(&mut |changed, pos| {
+        let key_priority = heap.pop(|changed, pos| {
             *key_to_pos.get_mut(changed).unwrap() = pos;
         })?;
         key_to_pos.remove(&key_priority.0);
@@ -79,7 +79,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
         };
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
-        heap.change_priority(index, priority, &mut |changed, pos| {
+        heap.change_priority(index, priority, |changed, pos| {
             *key_to_pos.get_mut(changed).unwrap() = pos;
         });
     }
@@ -89,7 +89,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
         let (_, old_val) = heap
-            .remove(index, &mut |changed, pos| {
+            .remove(index, |changed, pos| {
                 *key_to_pos.get_mut(changed).unwrap() = pos;
             })
             .unwrap();
