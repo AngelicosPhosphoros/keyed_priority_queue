@@ -142,6 +142,44 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     }
 }
 
+impl<TKey: Hash + Clone + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, TPriority> {
+    type Item = (TKey, TPriority);
+    type IntoIter = KeyedPriorityQueueIterator<TKey, TPriority>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Self::IntoIter { queue: self }
+    }
+}
+
+pub struct KeyedPriorityQueueIterator<TKey, TPriority>
+where
+    TKey: Hash + Clone + Eq,
+    TPriority: Ord,
+{
+    queue: KeyedPriorityQueue<TKey, TPriority>,
+}
+
+impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
+    for KeyedPriorityQueueIterator<TKey, TPriority>
+{
+    type Item = (TKey, TPriority);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.queue.pop()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.queue.len(), Some(self.queue.len()))
+    }
+
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.queue.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::KeyedPriorityQueue;
@@ -241,5 +279,25 @@ mod tests {
             assert_eq!(queue.pop(), Some((x, x)));
         }
         assert_eq!(queue.pop(), None);
+    }
+
+    #[test]
+    fn test_iteration() {
+        let items = [
+            ("first", 5),
+            ("second", 4),
+            ("third", 3),
+            ("fourth", 2),
+            ("fifth", 1),
+        ];
+
+        let queue: KeyedPriorityQueue<&str, i32> = items.iter().rev().cloned().collect();
+        let mut iter = queue.into_iter();
+        assert_eq!(iter.next(), Some(("first", 5)));
+        assert_eq!(iter.next(), Some(("second", 4)));
+        assert_eq!(iter.next(), Some(("third", 3)));
+        assert_eq!(iter.next(), Some(("fourth", 2)));
+        assert_eq!(iter.next(), Some(("fifth", 1)));
+        assert_eq!(iter.next(), None);
     }
 }
