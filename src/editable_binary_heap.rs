@@ -1,10 +1,8 @@
 use std::cmp::{Ord, Ordering};
+use std::fmt::Debug;
 use std::vec::Vec;
 
-struct HeapEntry<TKey, TPriority>
-where
-    TPriority: Ord,
-{
+struct HeapEntry<TKey, TPriority> {
     key: TKey,
     priority: TPriority,
 }
@@ -73,11 +71,10 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         Some((result.key, result.priority))
     }
 
-    pub fn look_into(&self, position: usize)->Option<(&TKey, &TPriority)>{
-        if self.data.len()<=position{
+    pub fn look_into(&self, position: usize) -> Option<(&TKey, &TPriority)> {
+        if self.data.len() <= position {
             None
-        }
-        else{
+        } else {
             let entry = &self.data[position];
             Some((&entry.key, &entry.priority))
         }
@@ -95,11 +92,19 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         }
 
         let old = std::mem::replace(&mut self.data[position].priority, updated);
-        if old < self.data[position].priority {
-            self.heapify_up(position, change_handler);
-        } else {
-            self.heapify_down(position, change_handler);
+        match old.cmp(&self.data[position].priority) {
+            Ordering::Less => {
+                self.heapify_up(position, change_handler);
+            }
+            Ordering::Equal => {}
+            Ordering::Greater => {
+                self.heapify_down(position, change_handler);
+            }
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 
     fn heapify_up(
@@ -168,7 +173,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
 // Default implementations
 
-impl<TKey: Clone, TPriority: Clone + Ord> Clone for HeapEntry<TKey, TPriority> {
+impl<TKey: Clone, TPriority: Clone> Clone for HeapEntry<TKey, TPriority> {
     fn clone(&self) -> Self {
         Self {
             key: self.key.clone(),
@@ -177,9 +182,21 @@ impl<TKey: Clone, TPriority: Clone + Ord> Clone for HeapEntry<TKey, TPriority> {
     }
 }
 
-impl<TKey: Copy, TPriority: Copy + Ord> Copy for HeapEntry<TKey, TPriority> {}
-unsafe impl<TKey: Sync, TPriority: Sync + Ord> Sync for HeapEntry<TKey, TPriority> {}
-unsafe impl<TKey: Send, TPriority: Send + Ord> Send for HeapEntry<TKey, TPriority> {}
+impl<TKey: Copy, TPriority: Copy> Copy for HeapEntry<TKey, TPriority> {}
+
+unsafe impl<TKey: Sync, TPriority: Sync> Sync for HeapEntry<TKey, TPriority> {}
+
+unsafe impl<TKey: Send, TPriority: Send> Send for HeapEntry<TKey, TPriority> {}
+
+impl<TKey: Debug, TPriority: Debug> Debug for HeapEntry<TKey, TPriority> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(
+            f,
+            "{{key: {:?}, priority: {:?}}}",
+            &self.key, &self.priority
+        )
+    }
+}
 
 impl<TKey: Clone, TPriority: Clone + Ord> Clone for BinaryHeap<TKey, TPriority> {
     fn clone(&self) -> Self {
@@ -188,8 +205,16 @@ impl<TKey: Clone, TPriority: Clone + Ord> Clone for BinaryHeap<TKey, TPriority> 
         }
     }
 }
+
 unsafe impl<TKey: Sync, TPriority: Sync + Ord> Sync for BinaryHeap<TKey, TPriority> {}
+
 unsafe impl<TKey: Send, TPriority: Send + Ord> Send for BinaryHeap<TKey, TPriority> {}
+
+impl<TKey: Debug, TPriority: Debug + Ord> Debug for BinaryHeap<TKey, TPriority> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        self.data.fmt(f)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -217,7 +242,7 @@ mod tests {
         let mut heap = BinaryHeap::<(), i32>::new();
         assert!(heap.peek().is_none());
         assert!(is_valid_heap(&heap), "Heap state is invalid");
-        for (i, &x) in items.iter().enumerate() {
+        for &x in items.iter() {
             if x > maximum {
                 maximum = x;
             }
@@ -257,7 +282,10 @@ mod tests {
                 "Not for all items change_handler called"
             );
             let position = last_positions[&x];
-            assert_eq!(heap.look_into(position).unwrap().0, heap.look_into(position).unwrap().1);
+            assert_eq!(
+                heap.look_into(position).unwrap().0,
+                heap.look_into(position).unwrap().1
+            );
             assert_eq!(*heap.look_into(position).unwrap().0, x);
         }
 
@@ -286,7 +314,10 @@ mod tests {
                     "Not for all items change_handler called"
                 );
                 let position = last_positions[&x];
-                assert_eq!(heap.look_into(position).unwrap().0, heap.look_into(position).unwrap().1);
+                assert_eq!(
+                    heap.look_into(position).unwrap().0,
+                    heap.look_into(position).unwrap().1
+                );
                 assert_eq!(*heap.look_into(position).unwrap().0, x);
             }
         }
@@ -323,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn test_change_priority(){
+    fn test_change_priority() {
         let pairs = [
             ("first", 0),
             ("second", 1),
@@ -333,13 +364,13 @@ mod tests {
         ];
 
         let mut heap = BinaryHeap::<&str, i32>::with_capacity(pairs.len());
-        for &(key, value) in pairs.iter(){
-            heap.push(key, value, &mut |_,_|{});
+        for &(key, value) in pairs.iter() {
+            heap.push(key, value, &mut |_, _| {});
         }
         assert!(is_valid_heap(&heap), "Invalid before change");
-        heap.change_priority(3, 10, &mut |_,_|{});
+        heap.change_priority(3, 10, &mut |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after upping");
-        heap.change_priority(21, -10, &mut |_,_|{});
+        heap.change_priority(21, -10, &mut |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after lowering");
     }
 }
