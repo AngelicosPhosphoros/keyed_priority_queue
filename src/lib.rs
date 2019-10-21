@@ -136,17 +136,9 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     for KeyedPriorityQueue<TKey, TPriority>
 {
     fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
-        let iterator = iter.into_iter();
-        let (lower_bound, _) = iterator.size_hint();
-        let mut res = if lower_bound == 0 {
-            Self::new()
-        } else {
-            Self::with_capacity(lower_bound)
-        };
-        for (key, priority) in iterator {
-            res.push(key, priority);
-        }
-        res
+        let heap: BinaryHeap<TKey, TPriority> = iter.into_iter().collect();
+        let key_to_pos = heap.generate_mapping();
+        Self { heap, key_to_pos }
     }
 }
 
@@ -239,13 +231,13 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_items(){
+    fn test_remove_items() {
         let mut items = [1, 4, 5, 2, 3];
-        let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x|(x,x)).collect();
+        let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x| (x, x)).collect();
         queue.remove_item(&3);
-        assert_eq!(queue.len(), items.len()-1);
+        assert_eq!(queue.len(), items.len() - 1);
         items.sort_unstable_by_key(|&x| -x);
-        for x in items.iter().cloned().filter(|&x|x!=3) {
+        for x in items.iter().cloned().filter(|&x| x != 3) {
             assert_eq!(queue.pop(), Some((x, x)));
         }
         assert_eq!(queue.pop(), None);

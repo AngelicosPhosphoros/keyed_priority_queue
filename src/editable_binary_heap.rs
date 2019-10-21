@@ -1,5 +1,7 @@
 use std::cmp::{Ord, Ordering};
+use std::collections::HashMap;
 use std::fmt::Debug;
+use std::iter::FromIterator;
 use std::vec::Vec;
 
 struct HeapEntry<TKey, TPriority> {
@@ -171,6 +173,34 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
     }
 }
 
+impl<TKey: std::hash::Hash + Clone + Eq, TPriority: Ord> BinaryHeap<TKey, TPriority> {
+    pub(crate) fn generate_mapping(&self) -> HashMap<TKey, usize> {
+        self.data
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.key.clone(), index))
+            .collect()
+    }
+}
+
+impl<TKey, TPriority: Ord> FromIterator<(TKey, TPriority)> for BinaryHeap<TKey, TPriority> {
+    fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
+        let data: Vec<HeapEntry<TKey, TPriority>> = iter
+            .into_iter()
+            .map(|(key, priority)| HeapEntry { key, priority })
+            .collect();
+        if data.len() < 2 {
+            return Self { data };
+        }
+        let mut res = Self { data };
+        let heapify_start = std::cmp::min(res.data.len() / 2 + 2, res.data.len());
+        for i in (0..heapify_start).rev() {
+            res.heapify_down(i, &mut |_, _| {});
+        }
+        res
+    }
+}
+
 // Default implementations
 
 impl<TKey: Clone, TPriority: Clone> Clone for HeapEntry<TKey, TPriority> {
@@ -247,7 +277,11 @@ mod tests {
                 maximum = x;
             }
             heap.push((), x, &mut |_, _| {});
-            assert!(is_valid_heap(&heap), "Heap state is invalid");
+            assert!(
+                is_valid_heap(&heap),
+                "Heap state is invalid after pushing {}",
+                x
+            );
             assert!(heap.peek().is_some());
             let (_, &heap_max) = heap.peek().unwrap();
             assert_eq!(maximum, heap_max)
@@ -347,7 +381,7 @@ mod tests {
         items.sort_unstable_by_key(|&x| Reverse(x));
         for &x in items.iter() {
             assert_eq!(heap.pop(&mut |_, _| {}), Some((x, x)));
-            assert!(is_valid_heap(&heap), format!("Heap is invalid after {}", x));
+            assert!(is_valid_heap(&heap), "Heap is invalid after {}", x);
         }
 
         assert_eq!(heap.pop(&mut |_, _| {}), None);
@@ -363,14 +397,53 @@ mod tests {
             ("fifth", 4),
         ];
 
-        let mut heap = BinaryHeap::<&str, i32>::with_capacity(pairs.len());
-        for &(key, value) in pairs.iter() {
-            heap.push(key, value, &mut |_, _| {});
-        }
+        let mut heap: BinaryHeap<&str, i32> = pairs.iter().cloned().collect();
         assert!(is_valid_heap(&heap), "Invalid before change");
         heap.change_priority(3, 10, &mut |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after upping");
         heap.change_priority(21, -10, &mut |_, _| {});
         assert!(is_valid_heap(&heap), "Invalid after lowering");
+    }
+
+    #[test]
+    fn test_from_iter() {
+        let data = [
+            16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3, -7, -5,
+            -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7, 16, -19,
+            -9, -17, 6, -16, -3, 11, -14, -15, -10, 13, 11, -14, 18, -8, -9, -4, 5, -4, 17, 6, -16,
+            -5, 12, 12, -3, 8, 5, -4, 7, 10, 7, -11, 18, -16, 18, 4, -15, -4, -13, 7, -14, -16,
+            -18, -10, 13, -1, -9, 0, -18, -4, -13, 16, 10, -20, 19, 20, 0, -9, -7, 14, 19, -8, -18,
+            -1, -17, -11, 13, 12, -15, 0, -18, 6, -13, -17, -3, 18, 2, 12, 12, 4, -14, -11, -10,
+            -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20, -18, -8, 7,
+        ];
+
+        for len in 0..data.len() {
+            let heap: BinaryHeap<i32, i32> = data.iter().take(len).map(|&x| (x, x)).collect();
+            assert!(
+                is_valid_heap(&heap),
+                "Invalid heap from iterator on len {}\n{:?}",
+                len,
+                &heap,
+            );
+        }
+    }
+
+    #[test]
+    fn test_generate_mapping() {
+        let data = [
+            16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3, -7, -5,
+            -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7, 16, -19,
+            -9, -17, 6, -16, -3, 11, -14, -15, -10, 13, 11, -14, 18, -8, -9, -4, 5, -4, 17, 6, -16,
+            -5, 12, 12, -3, 8, 5, -4, 7, 10, 7, -11, 18, -16, 18, 4, -15, -4, -13, 7, -14, -16,
+            -18, -10, 13, -1, -9, 0, -18, -4, -13, 16, 10, -20, 19, 20, 0, -9, -7, 14, 19, -8, -18,
+            -1, -17, -11, 13, 12, -15, 0, -18, 6, -13, -17, -3, 18, 2, 12, 12, 4, -14, -11, -10,
+            -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20, -18, -8, 7,
+        ];
+
+        let heap: BinaryHeap<i32, i32> = data.iter().map(|&x| (x, x)).collect();
+        let mapping = heap.generate_mapping();
+        for (key, pos) in mapping {
+            assert_eq!(heap.data[pos].key, key);
+        }
     }
 }
