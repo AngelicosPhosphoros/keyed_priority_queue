@@ -33,10 +33,9 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         &mut self,
         key: TKey,
         priority: TPriority,
-        mut change_handler: TChangeHandler,
+        change_handler: TChangeHandler,
     ) {
         self.data.push(HeapEntry { key, priority });
-        change_handler(&self.data.last().unwrap().key, self.data.len() - 1);
         self.heapify_up(self.data.len() - 1, change_handler);
     }
 
@@ -58,7 +57,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
     pub fn remove<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
-        mut change_handler: TChangeHandler,
+        change_handler: TChangeHandler,
     ) -> Option<(TKey, TPriority)> {
         if self.data.len() <= position {
             return None;
@@ -67,7 +66,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
             let result = self.data.pop().unwrap();
             return Some((result.key, result.priority));
         }
-        self.swap_items(position, self.data.len() - 1, &mut change_handler);
+        self.swap_items(position, self.data.len() - 1);
         let result = self.data.pop().unwrap();
         self.heapify_down(position, change_handler);
         Some((result.key, result.priority))
@@ -119,12 +118,14 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         while position > 0 {
             let parent_pos = (position - 1) >> 1;
             if self.data[parent_pos].priority < self.data[position].priority {
-                self.swap_items(parent_pos, position, &mut change_handler);
+                self.swap_items(parent_pos, position);
+                change_handler(&self.data[position].key, position);
                 position = parent_pos;
             } else {
                 break;
             }
         }
+        change_handler(&self.data[position].key, position);
     }
 
     fn heapify_down<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
@@ -151,25 +152,20 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
             };
 
             if self.data[position].priority < self.data[max_child_idx].priority {
-                self.swap_items(position, max_child_idx, &mut change_handler);
+                self.swap_items(position, max_child_idx);
+                change_handler(&self.data[position].key, position);
                 position = max_child_idx;
             } else {
                 break;
             }
         }
+        change_handler(&self.data[position].key, position);
     }
 
-    fn swap_items<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
-        &mut self,
-        pos1: usize,
-        pos2: usize,
-        change_handler: &mut TChangeHandler,
-    ) {
+    fn swap_items(&mut self, pos1: usize, pos2: usize) {
         debug_assert!(pos1 < self.data.len(), "Out of index in first pos in swap");
         debug_assert!(pos2 < self.data.len(), "Out of index in second pos in swap");
         self.data.swap(pos1, pos2);
-        change_handler(&self.data[pos1].key, pos1);
-        change_handler(&self.data[pos2].key, pos2);
     }
 }
 
