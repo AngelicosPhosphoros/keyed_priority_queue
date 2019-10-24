@@ -17,11 +17,11 @@ where
 }
 
 impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { data: Vec::new() }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
         }
@@ -29,7 +29,8 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
     /// Puts key and priority in queue, returns its final position
     /// Calls change_handler for every move of old values
-    pub fn push<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
+    #[inline(always)]
+    pub(crate) fn push<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         key: TKey,
         priority: TPriority,
@@ -41,20 +42,22 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
 
     /// Removes item with the biggest priority
     /// Time complexity - O(log n) swaps and change_handler calls
-    pub fn pop<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
+    #[inline(always)]
+    pub(crate) fn pop<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         change_handler: TChangeHandler,
     ) -> Option<(TKey, TPriority)> {
         self.remove(0, change_handler)
     }
 
-    pub fn peek(&self) -> Option<(&TKey, &TPriority)> {
+    #[inline(always)]
+    pub(crate) fn peek(&self) -> Option<(&TKey, &TPriority)> {
         self.look_into(0)
     }
 
     /// Removes item at position and returns it
     /// Time complexity - O(log n) swaps and change_handler calls
-    pub fn remove<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
+    pub(crate) fn remove<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
         change_handler: TChangeHandler,
@@ -72,24 +75,21 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         Some((result.key, result.priority))
     }
 
-    pub fn look_into(&self, position: usize) -> Option<(&TKey, &TPriority)> {
-        if self.data.len() <= position {
-            None
-        } else {
-            let entry = &self.data[position];
-            Some((&entry.key, &entry.priority))
-        }
+    #[inline(always)]
+    pub(crate) fn look_into(&self, position: usize) -> Option<(&TKey, &TPriority)> {
+        let entry = self.data.get(position)?;
+        Some((&entry.key, &entry.priority))
     }
 
     /// Changes priority of queue item
-    pub fn change_priority<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
+    pub(crate) fn change_priority<TChangeHandler: std::ops::FnMut(&TKey, usize)>(
         &mut self,
         position: usize,
         updated: TPriority,
         change_handler: TChangeHandler,
     ) {
         if position >= self.data.len() {
-            return;
+            panic!("Out of index during changing priority");
         }
 
         let old = std::mem::replace(&mut self.data[position].priority, updated);
@@ -104,7 +104,8 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         }
     }
 
-    pub fn len(&self) -> usize {
+    #[inline(always)]
+    pub(crate) fn len(&self) -> usize {
         self.data.len()
     }
 
@@ -162,6 +163,7 @@ impl<TKey, TPriority: Ord> BinaryHeap<TKey, TPriority> {
         change_handler(&self.data[position].key, position);
     }
 
+    #[inline(always)]
     fn swap_items(&mut self, pos1: usize, pos2: usize) {
         debug_assert!(pos1 < self.data.len(), "Out of index in first pos in swap");
         debug_assert!(pos2 < self.data.len(), "Out of index in second pos in swap");
