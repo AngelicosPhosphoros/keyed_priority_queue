@@ -8,8 +8,6 @@ license = "MIT"
 readme = "README.md"
 categories = ["data-structures"]
 keywords = ["priority", "queue", "keyed", "binary", "heap"]
-maintenance = { status = "actively-developed" }
-travis-ci = { repository = "AngelicosPhosphoros/keyed_priority_queue", branch = "master" }
 repository = "https://github.com/AngelicosPhosphoros/keyed_priority_queue"
 documentation = "https://docs.rs/keyed_priority_queue"
 

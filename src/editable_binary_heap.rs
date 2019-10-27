@@ -218,7 +218,7 @@ impl<TKey: std::hash::Hash + Clone + Eq, TPriority: Ord> BinaryHeap<TKey, TPrior
         for (i, entry) in res.data.iter().enumerate() {
             map.insert(entry.key.clone(), i);
         }
-        return (res, map);
+        (res, map)
     }
 }
 
