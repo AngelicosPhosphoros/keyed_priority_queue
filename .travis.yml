@@ -1,0 +1,18 @@
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+jobs:
+  allow_failures:
+    - rust: nightly
+    - rust: beta
+
+script:
+  - cargo build --release
+  - cargo test --verbose
+  - cargo fmt --verbose -- --check
+
+notifications:
+  email:
+    on_success: never
