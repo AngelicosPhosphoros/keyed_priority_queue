@@ -1,5 +1,11 @@
 # Keyed Priority Queue
 
+[![Build Status](https://travis-ci.org/AngelicosPhosphoros/keyed_priority_queue.svg?branch=master)](https://travis-ci.org/AngelicosPhosphoros/keyed_priority_queue)
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Average time to resolve an issue](http://isitmaintained.com/badge/resolution/AngelicosPhosphoros/keyed_priority_queue.svg)](http://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Average time to resolve an issue")
+[![Percentage of issues still open](http://isitmaintained.com/badge/open/AngelicosPhosphoros/keyed_priority_queue.svg)](http://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Percentage of issues still open")
+
+
 A Rust library with priority queue that supports changing of priority item in queue or early removal.
 To change priority you need to use some key.
 
