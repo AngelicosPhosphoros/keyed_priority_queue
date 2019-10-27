@@ -14,7 +14,7 @@ To change priority you need to use some key.
 Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-keyed_priority_queue = "0.1.0"
+keyed_priority_queue = "0.1.*"
 ```
 
 The example of code:

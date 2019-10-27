@@ -615,6 +615,12 @@ impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug
     }
 }
 
+impl<TKey: Hash + Clone + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     for KeyedPriorityQueue<TKey, TPriority>
 {
