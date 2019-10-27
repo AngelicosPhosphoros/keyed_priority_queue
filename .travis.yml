@@ -8,6 +8,9 @@ jobs:
     - rust: nightly
     - rust: beta
 
+install:
+  - rustup component add rustfmt
+
 script:
   - cargo build --release
   - cargo test --verbose
