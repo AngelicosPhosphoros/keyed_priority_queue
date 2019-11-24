@@ -154,6 +154,7 @@ use std::hash::Hash;
 mod editable_binary_heap;
 
 use editable_binary_heap::BinaryHeap;
+use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::iter::FromIterator;
 
@@ -433,7 +434,11 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ### Time complexity
     ///
     /// ***O(1)*** in average (limited by HashMap key lookup).
-    pub fn get_priority(&self, key: &TKey) -> Option<&TPriority> {
+    pub fn get_priority<Q>(&self, key: &Q) -> Option<&TPriority>
+    where
+        TKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let index = *self.key_to_pos.get(key)?;
         let (_, priority) = self.heap.look_into(index).unwrap();
         Some(priority)
@@ -466,7 +471,11 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///                             .iter().cloned().collect();
     /// queue.set_priority(&"Missing", 5);
     /// ```
-    pub fn set_priority(&mut self, key: &TKey, priority: TPriority) {
+    pub fn set_priority<Q>(&mut self, key: &Q, priority: TPriority)
+    where
+        TKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let index = match self.key_to_pos.get(key) {
             None => panic!("Tried to set_priority with unknown key"),
             Some(&idx) => idx,
@@ -474,7 +483,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
         heap.change_priority(index, priority, |changed, pos| {
-            *key_to_pos.get_mut(changed).unwrap() = pos;
+            *key_to_pos.get_mut(changed.borrow()).unwrap() = pos;
         });
     }
 
@@ -498,13 +507,17 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ### Time complexity
     ///
     /// On average the function will require ***O(log n)*** operations.
-    pub fn remove_item(&mut self, key: &TKey) -> Option<TPriority> {
+    pub fn remove_item<Q>(&mut self, key: &Q) -> Option<TPriority>
+    where
+        TKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
         let index = *self.key_to_pos.get(key)?;
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
         let (_, old_val) = heap
             .remove(index, |changed, pos| {
-                *key_to_pos.get_mut(changed).unwrap() = pos;
+                *key_to_pos.get_mut(changed.borrow()).unwrap() = pos;
             })
             .unwrap();
         self.key_to_pos.remove(key);
@@ -841,5 +854,16 @@ mod tests {
         assert_eq!(queue.peek(), Some((&0, &7)));
         queue.push(0, 9);
         assert_eq!(queue.peek(), Some((&0, &9)));
+    }
+
+    #[test]
+    fn test_borrow_keys() {
+        let mut queue: KeyedPriorityQueue<String, i32> = KeyedPriorityQueue::new();
+        queue.push("Hello".to_string(), 5);
+        let string = "Hello".to_string();
+        let string_ref: &String = &string;
+        let str_ref: &str = &string;
+        assert_eq!(queue.get_priority(string_ref), Some(&5));
+        assert_eq!(queue.get_priority(str_ref), Some(&5));
     }
 }
