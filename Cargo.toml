@@ -15,3 +15,36 @@ documentation = "https://docs.rs/keyed_priority_queue"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.7"
+rand_chacha = "0.2"
+
+[[bench]]
+name = "bench_push"
+harness = false
+
+[[bench]]
+name = "bench_pop"
+harness = false
+
+[[bench]]
+name = "bench_get_priority"
+harness = false
+
+[[bench]]
+name = "bench_set_priority"
+harness = false
+
+[[bench]]
+name = "bench_remove_item"
+harness = false
+
+[[bench]]
+name = "bench_from_iter"
+harness = false
+
+[[bench]]
+name = "bench_a_star"
+harness = false

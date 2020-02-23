@@ -216,7 +216,7 @@ impl<TKey: std::hash::Hash + Clone + Eq, TPriority: Ord> BinaryHeap<TKey, TPrior
         }
 
         for (i, entry) in res.data.iter().enumerate() {
-            map.insert(entry.key.clone(), i);
+            *map.get_mut(&entry.key).unwrap() = i;
         }
         (res, map)
     }
