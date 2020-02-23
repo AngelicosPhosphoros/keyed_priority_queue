@@ -129,22 +129,20 @@
 //!     None
 //! }
 //!
-//! fn main() {
-//!     let field = Field {
-//!         rows: 4,
-//!         columns: 4,
-//!         costs: vec![
-//!             1, 3, 3, 6, //
-//!             4, 4, 3, 8, //
-//!             3, 1, 2, 4, //
-//!             4, 8, 9, 4, //
-//!         ].into_boxed_slice(),
-//!     };
+//!let field = Field {
+//!    rows: 4,
+//!    columns: 4,
+//!    costs: vec![
+//!        1, 3, 3, 6, //
+//!        4, 4, 3, 8, //
+//!        3, 1, 2, 4, //
+//!        4, 8, 9, 4, //
+//!    ].into_boxed_slice(),
+//!};
 //!
-//!     let start = Position { row: 0, column: 0 };
-//!     let end = Position { row: 3, column: 3 };
-//!     assert_eq!(find_path(start, end, &field), Some(18));
-//! }
+//!let start = Position { row: 0, column: 0 };
+//!let end = Position { row: 3, column: 3 };
+//!assert_eq!(find_path(start, end, &field), Some(18));
 //! ```
 //!
 
@@ -608,16 +606,6 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
             key_to_pos: self.key_to_pos.clone(),
         }
     }
-}
-
-unsafe impl<TKey: Hash + Clone + Eq + Sync, TPriority: Ord + Sync> Sync
-    for KeyedPriorityQueue<TKey, TPriority>
-{
-}
-
-unsafe impl<TKey: Hash + Clone + Eq + Send, TPriority: Ord + Send> Send
-    for KeyedPriorityQueue<TKey, TPriority>
-{
 }
 
 impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug

@@ -1,5 +1,0 @@
-^target/
-glob:*.rs.bk
-glob:Cargo.lock
-# Intellij idea files
-\.idea/

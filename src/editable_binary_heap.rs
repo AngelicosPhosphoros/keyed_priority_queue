@@ -235,10 +235,6 @@ impl<TKey: Clone, TPriority: Clone> Clone for HeapEntry<TKey, TPriority> {
 
 impl<TKey: Copy, TPriority: Copy> Copy for HeapEntry<TKey, TPriority> {}
 
-unsafe impl<TKey: Sync, TPriority: Sync> Sync for HeapEntry<TKey, TPriority> {}
-
-unsafe impl<TKey: Send, TPriority: Send> Send for HeapEntry<TKey, TPriority> {}
-
 impl<TKey: Debug, TPriority: Debug> Debug for HeapEntry<TKey, TPriority> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
@@ -256,10 +252,6 @@ impl<TKey: Clone, TPriority: Clone + Ord> Clone for BinaryHeap<TKey, TPriority> 
         }
     }
 }
-
-unsafe impl<TKey: Sync, TPriority: Sync + Ord> Sync for BinaryHeap<TKey, TPriority> {}
-
-unsafe impl<TKey: Send, TPriority: Send + Ord> Send for BinaryHeap<TKey, TPriority> {}
 
 impl<TKey: Debug, TPriority: Debug + Ord> Debug for BinaryHeap<TKey, TPriority> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
