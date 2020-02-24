@@ -209,43 +209,6 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     }
 }
 
-// impl<TPriority: Ord> BinaryHeap<TPriority> {
-//     pub(crate) fn build_from_iterator<T: Iterator<Item = (RemapIndex, TPriority)>>(
-//         iter: T,
-//     ) -> (Self, HashMap<TKey, usize>) {
-//         let minimal_size = iter.size_hint().0;
-//         let mut vec: Vec<HeapEntry<TKey, TPriority>> = if minimal_size > 0 {
-//             Vec::with_capacity(minimal_size)
-//         } else {
-//             Vec::new()
-//         };
-//         let mut map: HashMap<TKey, usize> = if minimal_size > 0 {
-//             HashMap::with_capacity(minimal_size)
-//         } else {
-//             HashMap::new()
-//         };
-//         for (key, priority) in iter {
-//             if let Some(&pos) = map.get(&key) {
-//                 vec[pos].priority = priority;
-//             } else {
-//                 map.insert(key.clone(), vec.len());
-//                 vec.push(HeapEntry { key, priority });
-//             }
-//         }
-
-//         let mut res = Self { data: vec };
-//         let heapify_start = std::cmp::min(res.data.len() / 2 + 2, res.data.len());
-//         for i in (0..heapify_start).rev().map(|x|HeapIndex(x)) {
-//             res.heapify_down(i, |_, _| {});
-//         }
-
-//         for (i, entry) in res.data.iter().enumerate() {
-//             *map.get_mut(&entry.key).unwrap() = i;
-//         }
-//         (res, map)
-//     }
-// }
-
 // Default implementations
 
 impl<TPriority: Clone> Clone for HeapEntry<TPriority> {
@@ -266,6 +229,57 @@ impl<TPriority: Debug> Debug for HeapEntry<TPriority> {
             "{{key: {:?}, priority: {:?}}}",
             &self.key, &self.priority
         )
+    }
+}
+
+pub(crate) mod for_iteration_construction {
+    use super::{BinaryHeap, HeapEntry, HeapIndex};
+    use crate::internal_remapping::RemapIndex;
+
+    #[inline(always)]
+    pub(crate) fn make_heap_entry<TPriority>(
+        remap_idx: RemapIndex,
+        priority: TPriority,
+    ) -> HeapEntry<TPriority> {
+        HeapEntry {
+            key: remap_idx,
+            priority,
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_entry_priority<TPriority>(
+        entry: &mut HeapEntry<TPriority>,
+        new_priority: TPriority,
+    ) {
+        entry.priority = new_priority;
+    }
+
+    #[inline(always)]
+    pub(crate) fn make_heap_index(index: usize) -> HeapIndex {
+        HeapIndex(index)
+    }
+
+    pub(crate) fn create_heap<TPriority: Ord>(
+        vec: Vec<HeapEntry<TPriority>>,
+    ) -> BinaryHeap<TPriority> {
+        let heapify_start = std::cmp::min(vec.len() / 2 + 2, vec.len());
+        let mut res = BinaryHeap { data: vec };
+        for pos in (0..heapify_start).rev().map(HeapIndex) {
+            res.heapify_down(pos, |_, _| {});
+        }
+        res
+    }
+
+    #[inline(always)]
+    pub(crate) fn reader_iterator<TP: Ord>(
+        heap: &BinaryHeap<TP>,
+    ) -> impl Iterator<Item = (HeapIndex, &RemapIndex)> {
+        heap.data
+            .iter()
+            .map(|x| &x.key)
+            .enumerate()
+            .map(|(i, r)| (HeapIndex(i), r))
     }
 }
 
@@ -449,28 +463,33 @@ mod tests {
         assert!(is_valid_heap(&heap), "Invalid after lowering");
     }
 
-    // #[test]
-    // fn build_from_iterator() {
-    //     let data = [
-    //         16, 16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3, -7,
-    //         -5, -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7, 16,
-    //         -19, -9, -17, 6, -16, -3, 11, -14, -15, -10, 13, 11, -14, 18, -8, -9, -4, 5, -4, 17, 6,
-    //         -16, -5, 12, 12, -3, 8, 5, -4, 7, 10, 7, -11, 18, -16, 18, 4, -15, -4, -13, 7, -14,
-    //         -16, -18, -10, 13, -1, -9, 0, -18, -4, -13, 16, 10, -20, 19, 20, 0, -9, -7, 14, 19, -8,
-    //         -18, -1, -17, -11, 13, 12, -15, 0, -18, 6, -13, -17, -3, 18, 2, 12, 12, 4, -14, -11,
-    //         -10, -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20, -18, -8,
-    //         7,
-    //     ];
-    //     for len in 0..data.len() {
-    //         let (heap, map) =
-    //             BinaryHeap::<i32, i32>::build_from_iterator(data.iter().map(|&x| (x, x)).take(len));
-    //         for (i, entry) in heap.data.iter().enumerate() {
-    //             assert_eq!(map[&entry.key], i);
-    //         }
-    //         assert_eq!(heap.len().0, map.len());
-    //         assert!(is_valid_heap(&heap), "Must be valid heap");
-    //     }
-    // }
+    #[test]
+    fn create_heap_test() {
+        let priorities = [
+            16i32, 16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3,
+            -7, -5, -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7,
+            16, -19, -9, -17, 6, -16, -3, 11, -14, -15, -10, 13, 11, -14, 18, -8, -9, -4, 5, -4,
+            17, 6, -16, -5, 12, 12, -3, 8, 5, -4, 7, 10, 7, -11, 18, -16, 18, 4, -15, -4, -13, 7,
+            -14, -16, -18, -10, 13, -1, -9, 0, -18, -4, -13, 16, 10, -20, 19, 20, 0, -9, -7, 14,
+            19, -8, -18, -1, -17, -11, 13, 12, -15, 0, -18, 6, -13, -17, -3, 18, 2, 12, 12, 4, -14,
+            -11, -10, -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20,
+            -18, -8, 7,
+        ];
+        let combined_vec: Vec<HeapEntry<i32>> = priorities
+            .iter()
+            .cloned()
+            .enumerate()
+            .map(|(i, priority)| HeapEntry {
+                key: RemapIndex(i),
+                priority,
+            })
+            .collect();
+        let heap = for_iteration_construction::create_heap(combined_vec);
+        assert!(is_valid_heap(&heap), "Must be valid heap");
+        for v in heap.data {
+            assert_eq!(priorities[v.key.0], v.priority);
+        }
+    }
 
     #[test]
     fn test_clear() {

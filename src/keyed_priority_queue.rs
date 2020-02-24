@@ -489,13 +489,8 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     ///
     /// ***O(n log n)*** in average.
     fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
-        let iter = iter.into_iter();
-        let mut result = Self::with_capacity(iter.size_hint().0);
-
-        for (k, p) in iter {
-            result.push(k, p);
-        }
-        result
+        let (queue, key_to_pos) = QueueWrapper::build_from_iterator(iter.into_iter());
+        Self { queue, key_to_pos }
     }
 }
 

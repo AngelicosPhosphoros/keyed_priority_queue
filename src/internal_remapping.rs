@@ -215,6 +215,61 @@ impl<TKey: Debug, TPriority: Debug + Ord> Debug for QueueWrapper<TKey, TPriority
     }
 }
 
+impl<TKey: Clone + std::hash::Hash + Eq, TPriority: Ord> QueueWrapper<TKey, TPriority> {
+    pub(crate) fn build_from_iterator<TIter>(
+        iter: TIter,
+    ) -> (
+        QueueWrapper<TKey, TPriority>,
+        std::collections::HashMap<TKey, RemapIndex>,
+    )
+    where
+        TIter: Iterator<Item = (TKey, TPriority)>,
+    {
+        use crate::editable_binary_heap::for_iteration_construction;
+        use crate::editable_binary_heap::for_iteration_construction::{
+            create_heap, make_heap_entry, make_heap_index, set_entry_priority,
+        };
+        use crate::editable_binary_heap::HeapEntry;
+        use std::collections::hash_map::Entry;
+        use std::collections::HashMap;
+
+        let min_size = iter.size_hint().0;
+        let max_size = iter.size_hint().1.unwrap_or(min_size);
+        let mut for_heap: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
+        let mut for_wrapper: Vec<RemappingEntry<TKey>> = Vec::with_capacity(min_size);
+        let mut for_map: HashMap<TKey, RemapIndex> = HashMap::with_capacity(max_size);
+
+        for (key, priority) in iter {
+            match for_map.entry(key) {
+                Entry::Vacant(entry) => {
+                    let new_idx = for_heap.len();
+                    for_heap.push(make_heap_entry(RemapIndex(new_idx), priority));
+                    for_wrapper.push(RemappingEntry {
+                        key: entry.key().clone(),
+                        heap_idx: make_heap_index(new_idx),
+                    });
+                    entry.insert(RemapIndex(new_idx));
+                }
+                Entry::Occupied(entry) => {
+                    let index = entry.get().0;
+                    set_entry_priority(&mut for_heap[index], priority);
+                }
+            }
+        }
+
+        let heap = create_heap(for_heap);
+        for (heap_idx, &RemapIndex(v)) in for_iteration_construction::reader_iterator(&heap) {
+            for_wrapper[v].heap_idx = heap_idx;
+        }
+
+        let wrapper_queue = QueueWrapper {
+            heap,
+            remapping: for_wrapper,
+        };
+        (wrapper_queue, for_map)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
