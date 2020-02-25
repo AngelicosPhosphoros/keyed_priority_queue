@@ -44,7 +44,7 @@ pub(crate) fn get_unique_random_strings(n: usize, seed: u64) -> Vec<String> {
         .collect();
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut res = HashSet::with_capacity(n);
-    while res.len()<n {
+    while res.len() < n {
         let s: String = alphabet[..]
             .choose_multiple(&mut rng, STRING_SIZE)
             .collect();
@@ -62,18 +62,26 @@ where
     vals.choose_multiple(&mut rng, num).cloned().collect()
 }
 
-/// Splits the data in to parts: 
+/// Splits the data in to parts:
 /// 1. random shuffled first output for filling queue
 /// 2. `number_for_push` maximal items sorted in ascending order
 /// ## Panics
 /// If number_for_push bigger than data.len()
 #[allow(dead_code)]
-pub(crate) fn generate_worst_push_data<T: Ord + Clone>(mut data: Vec<T>, number_for_push: usize, seed: u64) -> (Vec<T>, Vec<T>) {
-    if number_for_push > data.len(){
-        panic!("number_for_push {} MUST be less or equal data length {}", number_for_push, data.len());
+pub(crate) fn generate_worst_push_data<T: Ord + Clone>(
+    mut data: Vec<T>,
+    number_for_push: usize,
+    seed: u64,
+) -> (Vec<T>, Vec<T>) {
+    if number_for_push > data.len() {
+        panic!(
+            "number_for_push {} MUST be less or equal data length {}",
+            number_for_push,
+            data.len()
+        );
     }
     data.sort_unstable();
-    let remain_length = data.len()-number_for_push;
+    let remain_length = data.len() - number_for_push;
     let for_pushes = data[remain_length..].to_vec();
     data.truncate(remain_length);
     let mut rng = ChaCha8Rng::seed_from_u64(seed);

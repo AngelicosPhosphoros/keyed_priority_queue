@@ -380,7 +380,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(1)***
     pub fn len(&self) -> usize {
-        debug_assert_eq!(self.key_to_pos.len(), self.queue.len().0);
+        debug_assert_eq!(self.key_to_pos.len(), self.queue.len().as_usize());
         self.key_to_pos.len()
     }
 
@@ -443,6 +443,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
     /// ### Time complexity
     ///
     /// Always ***O(n)***
+    #[must_use = "cloning is often expensive and is not expected to have side effects"]
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
@@ -460,6 +461,7 @@ impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug
 }
 
 impl<TKey: Hash + Clone + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+    #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
@@ -646,6 +648,7 @@ mod tests {
         let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x| (x, x)).collect();
         queue.remove_item(&3);
         assert_eq!(queue.len(), items.len() - 1);
+        assert_eq!(queue.get_priority(&3), None);
         items.sort_unstable_by_key(|&x| -x);
         for x in items.iter().cloned().filter(|&x| x != 3) {
             assert_eq!(queue.pop(), Some((x, x)));

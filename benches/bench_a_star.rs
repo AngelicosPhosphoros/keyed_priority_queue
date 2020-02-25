@@ -91,21 +91,22 @@ mod std_a_star {
                 + (target.column as isize - pos.column as isize).abs()) as usize
         };
 
-        let restore_path =
-            |pos: Position, parentize: &HashMap<Position, Position>| -> Vec<Position> {
-                let mut result = Vec::new();
-                let mut used: HashSet<Position> = HashSet::new();
-                let mut current = pos;
-                loop {
-                    result.push(current);
-                    used.insert(current);
-                    if current == start {
-                        result.reverse();
-                        return result;
-                    }
-                    current = parentize[&current];
+        fn restore_path(
+            pos: Position,
+            parentize: &HashMap<Position, Position>,
+            start: Position,
+        ) -> Vec<Position> {
+            let mut result = Vec::new();
+            let mut current = pos;
+            loop {
+                result.push(current);
+                if current == start {
+                    result.reverse();
+                    return result;
                 }
-            };
+                current = parentize[&current];
+            }
+        }
 
         // Child to its parent
         let mut parentize: HashMap<Position, Position> = HashMap::new();
@@ -118,7 +119,7 @@ mod std_a_star {
         available.push(Reverse((0 + calc_heuristic(start), 0, start)));
         while let Some(Reverse((_, current_cost, current_pos))) = available.pop() {
             if current_pos == target {
-                return Some(restore_path(current_pos, &parentize));
+                return Some(restore_path(current_pos, &parentize, start));
             }
 
             // No more need to remember
@@ -167,21 +168,22 @@ mod keyed_a_star {
                 + (target.column as isize - pos.column as isize).abs()) as usize
         };
 
-        let restore_path =
-            |pos: Position, parentize: &HashMap<Position, Position>| -> Vec<Position> {
-                let mut result = Vec::new();
-                let mut used: HashSet<Position> = HashSet::new();
-                let mut current = pos;
-                loop {
-                    result.push(current);
-                    used.insert(current);
-                    if current == start {
-                        result.reverse();
-                        return result;
-                    }
-                    current = parentize[&current];
+        fn restore_path(
+            pos: Position,
+            parentize: &HashMap<Position, Position>,
+            start: Position,
+        ) -> Vec<Position> {
+            let mut result = Vec::new();
+            let mut current = pos;
+            loop {
+                result.push(current);
+                if current == start {
+                    result.reverse();
+                    return result;
                 }
-            };
+                current = parentize[&current];
+            }
+        }
 
         // Child to its parent
         let mut parentize: HashMap<Position, Position> = HashMap::new();
@@ -204,7 +206,7 @@ mod keyed_a_star {
         );
         while let Some((current_pos, Reverse(current_cost))) = available.pop() {
             if current_pos == target {
-                return Some(restore_path(current_pos, &parentize));
+                return Some(restore_path(current_pos, &parentize, start));
             }
 
             closed_set.insert(current_pos);

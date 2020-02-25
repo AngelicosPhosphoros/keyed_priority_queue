@@ -1,20 +1,32 @@
 language: rust
-rust:
-  - stable
-  - beta
-  - nightly
 jobs:
+  include:
+    - rust: stable
+      install:
+        - rustup component add rustfmt
+      script: cargo fmt --verbose -- --check
+    - rust: stable
+      install: cd keyed_priority_queue
+      script: cargo build --release
+    - rust: beta
+      install: cd keyed_priority_queue
+      script: cargo build --release
+    - rust: nightly
+      install: cd keyed_priority_queue
+      script: cargo build --release
+    - rust: stable
+      install: cd keyed_priority_queue
+      script: cargo test --verbose
+    - rust: beta
+      install: cd keyed_priority_queue
+      script: cargo test --verbose
+    - rust: nightly
+      install: cd keyed_priority_queue
+      script: cargo test --verbose
+
   allow_failures:
     - rust: nightly
     - rust: beta
-
-install:
-  - rustup component add rustfmt
-
-script:
-  - cargo build --release
-  - cargo test --verbose
-  - cargo fmt --verbose -- --check
 
 notifications:
   email:

@@ -1,0 +1,52 @@
+[package]
+name = "benches"
+version = "0.0.0"
+authors = ["AngelicosPhosphoros <xuzin.timur@gmail.com>"]
+edition = "2018"
+publish = false
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+keyed_priority_queue = { path = "../keyed_priority_queue" }
+
+[dev-dependencies]
+criterion = "0.3"
+rand = "0.7"
+rand_chacha = "0.2"
+
+[[bench]]
+name = "bench_push"
+harness = false
+path = "bench_push.rs"
+
+[[bench]]
+name = "bench_pop"
+harness = false
+path = "bench_pop.rs"
+
+[[bench]]
+name = "bench_get_priority"
+harness = false
+path = "bench_get_priority.rs"
+
+[[bench]]
+name = "bench_set_priority"
+harness = false
+path = "bench_set_priority.rs"
+
+[[bench]]
+name = "bench_remove_item"
+harness = false
+path = "bench_remove_item.rs"
+
+[[bench]]
+name = "bench_from_iter"
+harness = false
+path = "bench_from_iter.rs"
+
+[[bench]]
+name = "bench_a_star"
+harness = false
+path = "bench_a_star.rs"

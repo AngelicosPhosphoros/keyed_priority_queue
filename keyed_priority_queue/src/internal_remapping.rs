@@ -3,7 +3,20 @@ use crate::editable_binary_heap::{BinaryHeap, HeapIndex};
 use std::fmt::Debug;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
-pub(crate) struct RemapIndex(pub(crate) usize);
+pub(crate) struct RemapIndex(usize);
+
+impl RemapIndex {
+    #[cfg(test)]
+    #[inline(always)]
+    pub(crate) fn new(v: usize) -> Self {
+        Self(v)
+    }
+
+    #[inline(always)]
+    pub(crate) fn as_usize(self) -> usize {
+        self.0
+    }
+}
 
 struct RemappingEntry<TKey> {
     key: TKey,

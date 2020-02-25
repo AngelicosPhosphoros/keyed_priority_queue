@@ -1,9 +1,10 @@
 # Keyed Priority Queue
 
+[![Crates.io](https://img.shields.io/crates/v/keyed_priority_queue)](https://crates.io/crates/keyed_priority_queue)
 [![Build Status](https://travis-ci.org/AngelicosPhosphoros/keyed_priority_queue.svg?branch=master)](https://travis-ci.org/AngelicosPhosphoros/keyed_priority_queue)
-[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-[![Average time to resolve an issue](http://isitmaintained.com/badge/resolution/AngelicosPhosphoros/keyed_priority_queue.svg)](http://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Average time to resolve an issue")
-[![Percentage of issues still open](http://isitmaintained.com/badge/open/AngelicosPhosphoros/keyed_priority_queue.svg)](http://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Percentage of issues still open")
+[![MIT licensed](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE.md)
+[![Average time to resolve an issue](https://isitmaintained.com/badge/resolution/AngelicosPhosphoros/keyed_priority_queue.svg)](https://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Average time to resolve an issue")
+[![Percentage of issues still open](https://isitmaintained.com/badge/open/AngelicosPhosphoros/keyed_priority_queue.svg)](https://isitmaintained.com/project/AngelicosPhosphoros/keyed_priority_queue "Percentage of issues still open")
 
 
 A Rust library with priority queue that supports changing of priority item in queue or early removal.

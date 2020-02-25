@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.1.3
+## 2020-02-25: 0.1.3
 ## Changed
 - Removed unsafe implementations of Sync + Send because they are deduced by compiler
 - Make some optimizations which reduce timings by 50% but increase memory usage in worst case on 30%

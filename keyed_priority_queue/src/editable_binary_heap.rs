@@ -323,7 +323,11 @@ mod tests {
         let mut heap = BinaryHeap::<i32>::new();
         assert!(heap.peek().is_none());
         assert!(is_valid_heap(&heap), "Heap state is invalid");
-        for (key, x) in items.iter().enumerate().map(|(i, &x)| (RemapIndex(i), x)) {
+        for (key, x) in items
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| (RemapIndex::new(i), x))
+        {
             if x > maximum {
                 maximum = x;
             }
@@ -352,21 +356,24 @@ mod tests {
             // Hack to avoid borrow checker
             let heap_local = unsafe { &*heap_ptr };
             assert_eq!(heap_local.look_into(position).unwrap().0, key);
-            assert_eq!(&items[key.0], heap_local.look_into(position).unwrap().1);
+            assert_eq!(
+                &items[key.as_usize()],
+                heap_local.look_into(position).unwrap().1
+            );
             last_positions.insert(key, position);
         };
         for (i, &x) in items.iter().enumerate() {
-            heap.push(RemapIndex(i), x, &mut on_pos_change);
+            heap.push(RemapIndex::new(i), x, &mut on_pos_change);
         }
         for i in 0..items.len() {
-            let rem_idx = RemapIndex(i);
+            let rem_idx = RemapIndex::new(i);
             assert!(
                 last_positions.contains_key(&rem_idx),
                 "Not for all items change_handler called"
             );
             let position = last_positions[&rem_idx];
             assert_eq!(
-                items[(heap.look_into(position).unwrap().0).0],
+                items[(heap.look_into(position).unwrap().0).as_usize()],
                 *heap.look_into(position).unwrap().1
             );
             assert_eq!(heap.look_into(position).unwrap().0, rem_idx);
@@ -378,7 +385,10 @@ mod tests {
                 // Hack to avoid borrow checker
                 let heap_local = unsafe { &*heap_ptr };
                 assert_eq!(heap_local.look_into(position).unwrap().0, key);
-                assert_eq!(items[key.0], *heap_local.look_into(position).unwrap().1);
+                assert_eq!(
+                    items[key.as_usize()],
+                    *heap_local.look_into(position).unwrap().1
+                );
                 last_positions.insert(key, position);
             };
             let popped = heap.pop(&mut on_pos_change);
@@ -390,16 +400,16 @@ mod tests {
             removed.insert(key);
             for i in (0..items.len())
                 .into_iter()
-                .filter(|i| !removed.contains(&RemapIndex(*i)))
+                .filter(|i| !removed.contains(&RemapIndex::new(*i)))
             {
-                let rem_idx = RemapIndex(i);
+                let rem_idx = RemapIndex::new(i);
                 assert!(
                     last_positions.contains_key(&rem_idx),
                     "Not for all items change_handler called"
                 );
                 let position = last_positions[&rem_idx];
                 assert_eq!(
-                    items[(heap.look_into(position).unwrap().0).0],
+                    items[(heap.look_into(position).unwrap().0).as_usize()],
                     *heap.look_into(position).unwrap().1
                 );
                 assert_eq!(heap.look_into(position).unwrap().0, rem_idx);
@@ -424,7 +434,7 @@ mod tests {
 
         let mut heap = BinaryHeap::<i32>::new();
         for (i, &x) in items.iter().enumerate() {
-            heap.push(RemapIndex(i), x, |_, _| {});
+            heap.push(RemapIndex::new(i), x, |_, _| {});
         }
         assert!(is_valid_heap(&heap), "Heap is invalid before pops");
 
@@ -435,7 +445,7 @@ mod tests {
             assert!(pop_res.is_some());
             let (rem_idx, val) = pop_res.unwrap();
             assert_eq!(val, x);
-            assert_eq!(items[rem_idx.0], val);
+            assert_eq!(items[rem_idx.as_usize()], val);
             assert!(is_valid_heap(&heap), "Heap is invalid after {}", x);
         }
 
@@ -445,11 +455,11 @@ mod tests {
     #[test]
     fn test_change_priority() {
         let pairs = [
-            (RemapIndex(0), 0),
-            (RemapIndex(1), 1),
-            (RemapIndex(2), 2),
-            (RemapIndex(3), 3),
-            (RemapIndex(4), 4),
+            (RemapIndex::new(0), 0),
+            (RemapIndex::new(1), 1),
+            (RemapIndex::new(2), 2),
+            (RemapIndex::new(3), 3),
+            (RemapIndex::new(4), 4),
         ];
 
         let mut heap = BinaryHeap::new();
@@ -480,14 +490,14 @@ mod tests {
             .cloned()
             .enumerate()
             .map(|(i, priority)| HeapEntry {
-                key: RemapIndex(i),
+                key: RemapIndex::new(i),
                 priority,
             })
             .collect();
         let heap = for_iteration_construction::create_heap(combined_vec);
         assert!(is_valid_heap(&heap), "Must be valid heap");
         for v in heap.data {
-            assert_eq!(priorities[v.key.0], v.priority);
+            assert_eq!(priorities[v.key.as_usize()], v.priority);
         }
     }
 
@@ -495,7 +505,7 @@ mod tests {
     fn test_clear() {
         let mut heap = BinaryHeap::new();
         for x in 0..5 {
-            heap.push(RemapIndex(x), x, |_, _| {});
+            heap.push(RemapIndex::new(x), x, |_, _| {});
         }
         assert!(!heap.is_empty(), "Heap must be non empty");
         heap.data.clear();
@@ -507,10 +517,16 @@ mod tests {
     fn test_change_key() {
         let mut heap = BinaryHeap::new();
         for x in 0..5 {
-            heap.push(RemapIndex(x), x, |_, _| {});
+            heap.push(RemapIndex::new(x), x, |_, _| {});
         }
-        assert_eq!(heap.look_into(HeapIndex(0)), Some((RemapIndex(4), &4)));
-        assert_eq!(heap.change_key(RemapIndex(10), HeapIndex(0)), RemapIndex(4));
-        assert_eq!(heap.look_into(HeapIndex(0)), Some((RemapIndex(10), &4)));
+        assert_eq!(heap.look_into(HeapIndex(0)), Some((RemapIndex::new(4), &4)));
+        assert_eq!(
+            heap.change_key(RemapIndex::new(10), HeapIndex(0)),
+            RemapIndex::new(4)
+        );
+        assert_eq!(
+            heap.look_into(HeapIndex(0)),
+            Some((RemapIndex::new(10), &4))
+        );
     }
 }
