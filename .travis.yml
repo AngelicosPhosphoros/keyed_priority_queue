@@ -1,10 +1,12 @@
 language: rust
 jobs:
   include:
+    # formatting
     - rust: stable
       install:
         - rustup component add rustfmt
       script: cargo fmt --verbose -- --check
+    # build
     - rust: stable
       install: cd keyed_priority_queue
       script: cargo build --release
@@ -15,6 +17,7 @@ jobs:
       install: cd keyed_priority_queue
       script: cargo build --release
     - rust: stable
+    # tests
       install: cd keyed_priority_queue
       script: cargo test --verbose
     - rust: beta
@@ -23,6 +26,10 @@ jobs:
     - rust: nightly
       install: cd keyed_priority_queue
       script: cargo test --verbose
+    # Validate readyness to publish
+    - rust: stable
+      install: cd keyed_priority_queue
+      script: cargo publish --dry-run
 
   allow_failures:
     - rust: nightly
