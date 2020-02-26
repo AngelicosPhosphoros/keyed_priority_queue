@@ -1,159 +1,8 @@
-//! This is priority queue that supports elements priority modification and early removal.
-//!
-//! It uses HashMap and own implementation of binary heap to achieve this.
-//!
-//! Each entry has associated *key* and *priority*.
-//! Keys must be unique, clonable, and hashable; priorities must implement Ord trait.
-//!
-//! Popping returns element with biggest priority.
-//! Pushing adds element to queue.
-//! Also it is possible to change priority or remove item by key.
-//!
-//! Pop, push, change priority, remove by key have ***O(log n)*** time complexity;
-//! peek, lookup by key are ***O(1)***.
-//!
-//! # Examples
-//!
-//! This is implementation of [A* algorithm][a_star] for 2D grid.
-//! Each cell in grid has the cost.
-//! This algorithm finds shortest path to target using heuristics.
-//!
-//! Let open set be the set of position where algorithm can move in next step.
-//! Sometimes better path for node in open set is found
-//! so the priority of it needs to be updated with new value.
-//!
-//! This example shows how to change priority in [`KeyedPriorityQueue`] when needed.
-//!
-//! [a_star]: https://en.wikipedia.org/wiki/A*_search_algorithm
-//! [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
-//!
-//! ```
-//! use keyed_priority_queue::KeyedPriorityQueue;
-//! use std::cmp::Reverse;
-//! use std::collections::HashSet;
-//! use std::ops::Index;
-//!
-//! struct Field {
-//!     rows: usize,
-//!     columns: usize,
-//!     costs: Box<[u32]>,
-//! }
-//!
-//! #[derive(Eq, PartialEq, Debug, Hash, Copy, Clone)]
-//! struct Position {
-//!     row: usize,
-//!     column: usize,
-//! }
-//!
-//! impl Index<Position> for Field {
-//!     type Output = u32;
-//!
-//!     fn index(&self, index: Position) -> &Self::Output {
-//!         &self.costs[self.columns * index.row + index.column]
-//!     }
-//! }
-//!
-//! // From cell we can move upper, right, bottom and left
-//! fn get_neighbors(pos: Position, field: &Field) -> Vec<Position> {
-//!     let mut items = Vec::with_capacity(4);
-//!     if pos.row > 0 {
-//!         items.push(Position { row: pos.row - 1, column: pos.column });
-//!     }
-//!     if pos.row + 1 < field.rows {
-//!         items.push(Position { row: pos.row + 1, column: pos.column });
-//!     }
-//!     if pos.column > 0 {
-//!         items.push(Position { row: pos.row, column: pos.column - 1 });
-//!     }
-//!     if pos.column + 1 < field.columns {
-//!         items.push(Position { row: pos.row, column: pos.column + 1 });
-//!     }
-//!     items
-//! }
-//!
-//! fn find_path(start: Position, target: Position, field: &Field) -> Option<u32> {
-//!     if start == target {
-//!         return Some(field[start]);
-//!     }
-//!     let calc_heuristic = |pos: Position| -> u32 {
-//!         ((target.row as isize - pos.row as isize).abs()
-//!             + (target.column as isize - pos.column as isize).abs()) as u32
-//!     };
-//!
-//!     // Already handled this points
-//!     let mut closed_set: HashSet<Position> = HashSet::new();
-//!     // Positions sortered by total cost and real cost.
-//!     // We prefer items with lower real cost if total ones are same.
-//!     #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-//!     struct Cost {
-//!         total: u32,
-//!         real: u32,
-//!     }
-//!     // Queue that contains all nodes that available for next step
-//!     // Min-queue required so Reverse struct used as priority.
-//!     let mut available = KeyedPriorityQueue::<Position, Reverse<Cost>>::new();
-//!     available.push(
-//!         start,
-//!         Reverse(Cost {
-//!             total: calc_heuristic(start),
-//!             real: 0,
-//!         }),
-//!     );
-//!     while let Some((current_pos, Reverse(current_cost))) = available.pop() {
-//!         // We have reached target
-//!         if current_pos == target {
-//!             return Some(current_cost.real);
-//!         }
-//!
-//!         closed_set.insert(current_pos);
-//!
-//!         for next in get_neighbors(current_pos, &field).into_iter()
-//!             .filter(|x| !closed_set.contains(x))
-//!             {
-//!                 let real = field[next] + current_cost.real;
-//!                 let total = current_cost.real + calc_heuristic(next);
-//!                 let cost = Cost { total, real };
-//!                 match available.get_priority(&next) {
-//!                     None => {
-//!                         // Add new position to queue
-//!                         available.push(next, Reverse(cost));
-//!                     }
-//!                     Some(&Reverse(old_cost)) if old_cost > cost => {
-//!                         // Have found better path to node in queue
-//!                         available.set_priority(&next, Reverse(cost));
-//!                     }
-//!                     _ => { /* Have found worse path. */ }
-//!                 };
-//!             }
-//!     }
-//!     None
-//! }
-//!
-//! fn main() {
-//!     let field = Field {
-//!         rows: 4,
-//!         columns: 4,
-//!         costs: vec![
-//!             1, 3, 3, 6, //
-//!             4, 4, 3, 8, //
-//!             3, 1, 2, 4, //
-//!             4, 8, 9, 4, //
-//!         ].into_boxed_slice(),
-//!     };
-//!
-//!     let start = Position { row: 0, column: 0 };
-//!     let end = Position { row: 3, column: 3 };
-//!     assert_eq!(find_path(start, end, &field), Some(18));
-//! }
-//! ```
-//!
-
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-mod editable_binary_heap;
-
-use editable_binary_heap::BinaryHeap;
+use crate::internal_remapping::{QueueWrapper, RemapIndex};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::iter::FromIterator;
@@ -269,8 +118,8 @@ where
     TKey: Hash + Clone + Eq,
     TPriority: Ord,
 {
-    heap: BinaryHeap<TKey, TPriority>,
-    key_to_pos: HashMap<TKey, usize>,
+    queue: QueueWrapper<TKey, TPriority>,
+    key_to_pos: HashMap<TKey, RemapIndex>,
 }
 
 impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
@@ -286,7 +135,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ```
     pub fn new() -> Self {
         Self {
-            heap: BinaryHeap::new(),
+            queue: QueueWrapper::new(),
             key_to_pos: HashMap::new(),
         }
     }
@@ -304,7 +153,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            heap: BinaryHeap::with_capacity(capacity),
+            queue: QueueWrapper::with_capacity(capacity),
             key_to_pos: HashMap::with_capacity(capacity),
         }
     }
@@ -326,7 +175,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// queue.push(4, 4);
     /// ```
     pub fn reserve(&mut self, additional: usize) {
-        self.heap.reserve(additional);
+        self.queue.reserve(additional);
         self.key_to_pos.reserve(additional);
     }
 
@@ -354,23 +203,16 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// In this case complexity of single call is ***O(n)***.
     pub fn push(&mut self, key: TKey, priority: TPriority) {
         // Borrow checker treats borrowing a field as borrowing whole structure
-        // so we need to avoid this by getting new references.
-        let heap = &mut self.heap;
+        // so we need to get references to fields to borrow them individually.
+        let queue = &mut self.queue;
         let key_to_pos = &mut self.key_to_pos;
-        match key_to_pos.get(&key) {
-            None => {
-                // It will be rewritten during binary heap rebalancing.
-                key_to_pos.insert(key.clone(), std::usize::MAX);
-                heap.push(key, priority, |changed, pos| {
-                    *key_to_pos.get_mut(changed).unwrap() = pos;
-                })
+        match key_to_pos.entry(key) {
+            Entry::Vacant(entry) => {
+                let queue_idx = queue.push(entry.key().clone(), priority);
+                entry.insert(queue_idx);
             }
-            Some(&index) => {
-                heap.change_priority(index, priority, |changed, pos| {
-                    *key_to_pos.get_mut(changed).unwrap() = pos;
-                });
-            }
-        };
+            Entry::Occupied(entry) => queue.set_priority(*entry.get(), priority),
+        }
     }
 
     /// Remove and return item with the maximal priority.
@@ -392,13 +234,16 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Cost of pop is always ***O(log n)***
     pub fn pop(&mut self) -> Option<(TKey, TPriority)> {
-        let heap = &mut self.heap;
+        let queue = &mut self.queue;
         let key_to_pos = &mut self.key_to_pos;
-        let key_priority = heap.pop(|changed, pos| {
-            *key_to_pos.get_mut(changed).unwrap() = pos;
-        })?;
-        key_to_pos.remove(&key_priority.0);
-        Some(key_priority)
+
+        let (key, priority, map_change) = queue.pop()?;
+        key_to_pos.remove(&key);
+        if let Some(map_change) = map_change {
+            *key_to_pos.get_mut(map_change.key.borrow()).unwrap() = map_change.new_pos;
+        }
+
+        Some((key, priority))
     }
 
     /// Get reference to the pair with the maximal priority.
@@ -416,7 +261,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(1)***
     pub fn peek(&self) -> Option<(&TKey, &TPriority)> {
-        self.heap.peek()
+        self.queue.peek()
     }
 
     /// Get reference to the priority by key.
@@ -440,8 +285,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
         Q: Hash + Eq + ?Sized,
     {
         let index = *self.key_to_pos.get(key)?;
-        let (_, priority) = self.heap.look_into(index).unwrap();
-        Some(priority)
+        Some(self.queue.get_priority(index))
     }
 
     /// Set new priority by key and reorder the queue.
@@ -480,11 +324,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
             None => panic!("Tried to set_priority with unknown key"),
             Some(&idx) => idx,
         };
-        let heap = &mut self.heap;
-        let key_to_pos = &mut self.key_to_pos;
-        heap.change_priority(index, priority, |changed, pos| {
-            *key_to_pos.get_mut(changed.borrow()).unwrap() = pos;
-        });
+        self.queue.set_priority(index, priority);
     }
 
     /// Allow removing item by key.
@@ -512,16 +352,17 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let index = *self.key_to_pos.get(key)?;
-        let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
-        let (_, old_val) = heap
-            .remove(index, |changed, pos| {
-                *key_to_pos.get_mut(changed.borrow()).unwrap() = pos;
-            })
-            .unwrap();
-        self.key_to_pos.remove(key);
-        Some(old_val)
+        let queue = &mut self.queue;
+
+        let index = *key_to_pos.get(key)?;
+        let (_, priority, map_change) = queue.remove_item(index);
+
+        key_to_pos.remove(key);
+        if let Some(map_change) = map_change {
+            *key_to_pos.get_mut(map_change.key.borrow()).unwrap() = map_change.new_pos;
+        }
+        Some(priority)
     }
 
     /// Get the number of elements in queue.
@@ -539,7 +380,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(1)***
     pub fn len(&self) -> usize {
-        debug_assert_eq!(self.key_to_pos.len(), self.heap.len());
+        debug_assert_eq!(self.key_to_pos.len(), self.queue.len().as_usize());
         self.key_to_pos.len()
     }
 
@@ -556,7 +397,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(1)***
     pub fn is_empty(&self) -> bool {
-        debug_assert_eq!(self.heap.is_empty(), self.key_to_pos.is_empty());
+        debug_assert_eq!(self.queue.is_empty(), self.key_to_pos.is_empty());
         self.key_to_pos.is_empty()
     }
 
@@ -574,7 +415,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(n)***
     pub fn clear(&mut self) {
-        self.heap.clear();
+        self.queue.clear();
         self.key_to_pos.clear();
     }
 }
@@ -602,33 +443,25 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
     /// ### Time complexity
     ///
     /// Always ***O(n)***
+    #[must_use = "cloning is often expensive and is not expected to have side effects"]
     fn clone(&self) -> Self {
         Self {
-            heap: self.heap.clone(),
+            queue: self.queue.clone(),
             key_to_pos: self.key_to_pos.clone(),
         }
     }
-}
-
-unsafe impl<TKey: Hash + Clone + Eq + Sync, TPriority: Ord + Sync> Sync
-    for KeyedPriorityQueue<TKey, TPriority>
-{
-}
-
-unsafe impl<TKey: Hash + Clone + Eq + Send, TPriority: Ord + Send> Send
-    for KeyedPriorityQueue<TKey, TPriority>
-{
 }
 
 impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug
     for KeyedPriorityQueue<TKey, TPriority>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        self.heap.fmt(f)
+        self.queue.fmt(f)
     }
 }
 
 impl<TKey: Hash + Clone + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+    #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
@@ -658,9 +491,8 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     ///
     /// ***O(n log n)*** in average.
     fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
-        let (heap, key_to_pos) =
-            BinaryHeap::<TKey, TPriority>::build_from_iterator(iter.into_iter());
-        Self { heap, key_to_pos }
+        let (queue, key_to_pos) = QueueWrapper::build_from_iterator(iter.into_iter());
+        Self { queue, key_to_pos }
     }
 }
 
@@ -724,7 +556,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
 
 #[cfg(test)]
 mod tests {
-    use crate::KeyedPriorityQueue;
+    use super::KeyedPriorityQueue;
 
     #[test]
     fn test_priority() {
@@ -816,6 +648,7 @@ mod tests {
         let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x| (x, x)).collect();
         queue.remove_item(&3);
         assert_eq!(queue.len(), items.len() - 1);
+        assert_eq!(queue.get_priority(&3), None);
         items.sort_unstable_by_key(|&x| -x);
         for x in items.iter().cloned().filter(|&x| x != 3) {
             assert_eq!(queue.pop(), Some((x, x)));
