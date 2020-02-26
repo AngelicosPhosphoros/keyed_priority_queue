@@ -353,19 +353,50 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ```
     /// use keyed_priority_queue::KeyedPriorityQueue;
     /// let mut queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
-    /// assert_eq!(queue.remove_item(&2), Some(2));
+    /// assert_eq!(queue.remove(&2), Some(2));
     /// assert_eq!(queue.pop(), Some((4,4)));
     /// assert_eq!(queue.pop(), Some((3,3)));
     /// // There is no 2
     /// assert_eq!(queue.pop(), Some((1,1)));
     /// assert_eq!(queue.pop(), Some((0,0)));
-    /// assert_eq!(queue.remove_item(&10), None);
+    /// assert_eq!(queue.remove(&10), None);
     /// ```
     ///
     /// ### Time complexity
     ///
     /// On average the function will require ***O(log n)*** operations.
-    pub fn remove_item<Q>(&mut self, key: &Q) -> Option<TPriority>
+    #[inline(always)]
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<TPriority>
+    where
+        TKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        let (_, priority) = self.remove_entry(key)?;
+        Some(priority)
+    }
+
+    /// Allow removing item by key.
+    /// Returns key and priority if succeeds.
+    ///
+    /// ### Examples
+    ///
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// let mut queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// assert_eq!(queue.remove_entry(&2), Some((2, 2)));
+    /// assert_eq!(queue.pop(), Some((4,4)));
+    /// assert_eq!(queue.pop(), Some((3,3)));
+    /// // There is no 2
+    /// assert_eq!(queue.pop(), Some((1,1)));
+    /// assert_eq!(queue.pop(), Some((0,0)));
+    /// assert_eq!(queue.remove_entry(&10), None);
+    /// ```
+    ///
+    /// ### Time complexity
+    ///
+    /// On average the function will require ***O(log n)*** operations.
+    pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(TKey, TPriority)>
     where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -379,14 +410,13 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
                 *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
             })
             .unwrap();
-        assert_eq!(index, removed_idx);
-        key_to_pos.swap_remove_index(index);
+        debug_assert_eq!(index, removed_idx);
+        let (removed_key, _) = key_to_pos.swap_remove_index(index).unwrap();
         if let Some((_, &heap_index_to_update)) = key_to_pos.get_index(removed_idx) {
             heap.change_outer_pos(MediatorIndex(removed_idx), heap_index_to_update);
         }
 
-        debug_assert_eq!(removed_idx, index);
-        Some(priority)
+        Some((removed_key, priority))
     }
 
     /// Get the number of elements in queue.
@@ -713,7 +743,8 @@ mod tests {
     fn test_remove_items() {
         let mut items = [1, 4, 5, 2, 3];
         let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x| (x, x)).collect();
-        queue.remove_item(&3);
+        assert_eq!(queue.remove_entry(&3), Some((3, 3)));
+        assert_eq!(queue.remove_entry(&20), None);
         assert_eq!(queue.len(), items.len() - 1);
         assert_eq!(queue.get_priority(&3), None);
         items.sort_unstable_by_key(|&x| -x);

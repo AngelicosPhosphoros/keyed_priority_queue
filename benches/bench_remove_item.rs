@@ -25,7 +25,7 @@ pub fn bench_remove_item(c: &mut Criterion) {
                 || base_queue.clone(),
                 |mut queue| {
                     for &k in test_keys.iter() {
-                        queue.remove_item(&k);
+                        queue.remove_entry(&k);
                     }
                     queue
                 },
@@ -54,7 +54,7 @@ pub fn bench_remove_item(c: &mut Criterion) {
                 || base_queue.clone(),
                 |mut queue| {
                     for k in test_keys.iter() {
-                        queue.remove_item(k);
+                        queue.remove_entry(k);
                     }
                     queue
                 },
