@@ -227,7 +227,7 @@ mod keyed_a_star {
                     }
                     Some(&Reverse(old_cost)) if old_cost > cost => {
                         parentize.insert(next, current_pos);
-                        available.set_priority(&next, Reverse(cost));
+                        available.set_priority(&next, Reverse(cost)).unwrap();
                     }
                     _ => {}
                 };

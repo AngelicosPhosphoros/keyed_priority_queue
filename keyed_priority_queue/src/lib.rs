@@ -147,7 +147,6 @@
 //!
 
 mod editable_binary_heap;
-mod internal_remapping;
 mod keyed_priority_queue;
 
 pub use crate::keyed_priority_queue::{KeyedPriorityQueue, KeyedPriorityQueueIterator};
