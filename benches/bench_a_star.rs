@@ -153,7 +153,7 @@ mod std_a_star {
 
 mod keyed_a_star {
     use super::*;
-    use keyed_priority_queue::KeyedPriorityQueue;
+    use keyed_priority_queue::{Entry, KeyedPriorityQueue};
 
     pub(crate) fn find_path(
         start: Position,
@@ -220,17 +220,17 @@ mod keyed_a_star {
                 let real = field[next] as usize + current_cost.real;
                 let total = current_cost.real + calc_heuristic(next);
                 let cost = Cost { total, real };
-                match available.get_priority(&next) {
-                    None => {
+                match available.entry(next) {
+                    Entry::Vacant(entry) => {
+                        entry.set_priority(Reverse(cost));
                         parentize.insert(next, current_pos);
-                        available.push(next, Reverse(cost));
                     }
-                    Some(&Reverse(old_cost)) if old_cost > cost => {
+                    Entry::Occupied(entry) if *entry.get_priority() < Reverse(cost) => {
+                        entry.set_priority(Reverse(cost));
                         parentize.insert(next, current_pos);
-                        available.set_priority(&next, Reverse(cost)).unwrap();
                     }
                     _ => {}
-                };
+                }
             }
         }
         None
