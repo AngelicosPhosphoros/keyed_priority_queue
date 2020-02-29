@@ -15,11 +15,6 @@ impl HeapIndex {
     pub(crate) const UNINIT: HeapIndex = HeapIndex(std::usize::MAX);
 
     #[inline(always)]
-    pub(crate) fn as_usize(self) -> usize {
-        self.0
-    }
-
-    #[inline(always)]
     fn plus1(self) -> Self {
         Self(self.0 + 1)
     }
@@ -30,22 +25,27 @@ impl HeapIndex {
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 pub(crate) struct MediatorIndex(pub(crate) usize);
 
-pub(crate) struct HeapEntry<TPriority> {
+struct HeapEntry<TPriority> {
     outer_pos: MediatorIndex,
-    pub(crate) priority: TPriority,
+    priority: TPriority,
 }
 
 impl<TPriority> HeapEntry<TPriority> {
     // For usings as HeapEntry::as_pair instead of closures in map
 
     #[inline(always)]
-    fn as_pair(self) -> (MediatorIndex, TPriority) {
+    fn to_pair(self) -> (MediatorIndex, TPriority) {
         (self.outer_pos, self.priority)
     }
 
     #[inline(always)]
-    fn as_pair_ref(&self) -> (MediatorIndex, &TPriority) {
+    fn to_pair_ref(&self) -> (MediatorIndex, &TPriority) {
         (self.outer_pos, &self.priority)
+    }
+
+    #[inline(always)]
+    fn to_outer(&self) -> MediatorIndex {
+        self.outer_pos
     }
 }
 
@@ -104,17 +104,17 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         }
         if position.plus1() == self.len() {
             let result = self.data.pop().unwrap();
-            return Some(result.as_pair());
+            return Some(result.to_pair());
         }
 
         let result = self.data.swap_remove(position.0);
         self.heapify_down(position, change_handler);
-        Some(result.as_pair())
+        Some(result.to_pair())
     }
 
     #[inline(always)]
     pub(crate) fn look_into(&self, position: HeapIndex) -> Option<(MediatorIndex, &TPriority)> {
-        self.data.get(position.0).map(HeapEntry::as_pair_ref)
+        self.data.get(position.0).map(HeapEntry::to_pair_ref)
     }
 
     /// Changes priority of queue item
@@ -167,6 +167,11 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     }
 
     #[inline(always)]
+    pub(crate) fn usize_len(&self) -> usize {
+        self.data.len()
+    }
+
+    #[inline(always)]
     pub(crate) fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -174,6 +179,52 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     #[inline(always)]
     pub(crate) fn clear(&mut self) {
         self.data.clear()
+    }
+
+    pub(crate) fn produce_from_iter_hash<TKey, TIter>(
+        iter: TIter,
+    ) -> (Self, indexmap::IndexMap<TKey, HeapIndex>)
+    where
+        TKey: std::hash::Hash + Eq,
+        TIter: IntoIterator<Item = (TKey, TPriority)>,
+    {
+        use indexmap::map::{Entry, IndexMap};
+
+        let iter = iter.into_iter();
+        let (min_size, _) = iter.size_hint();
+
+        let mut heap_base: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
+        let mut map: IndexMap<TKey, HeapIndex> = IndexMap::with_capacity(min_size);
+
+        for (key, priority) in iter {
+            match map.entry(key) {
+                Entry::Vacant(entry) => {
+                    let outer_pos = MediatorIndex(entry.index());
+                    entry.insert(HeapIndex(heap_base.len()));
+                    heap_base.push(HeapEntry {
+                        outer_pos,
+                        priority,
+                    });
+                }
+                Entry::Occupied(entry) => {
+                    let HeapIndex(heap_pos) = *entry.get();
+                    heap_base[heap_pos].priority = priority;
+                }
+            }
+        }
+
+        let heapify_start = std::cmp::min(heap_base.len() / 2 + 2, heap_base.len());
+        let mut heap = BinaryHeap { data: heap_base };
+        for pos in (0..heapify_start).rev().map(HeapIndex) {
+            heap.heapify_down(pos, |_, _| {});
+        }
+
+        for (i, MediatorIndex(pos)) in heap.data.iter().map(HeapEntry::to_outer).enumerate() {
+            let (_, heap_idx) = map.get_index_mut(pos).unwrap();
+            *heap_idx = HeapIndex(i);
+        }
+
+        (heap, map)
     }
 
     fn heapify_up<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
@@ -251,57 +302,6 @@ impl<TPriority: Debug> Debug for HeapEntry<TPriority> {
             "{{outer: {:?}, priority: {:?}}}",
             &self.outer_pos, &self.priority
         )
-    }
-}
-
-pub(crate) mod for_iteration_construction {
-    use super::MediatorIndex;
-    use super::{BinaryHeap, HeapEntry, HeapIndex};
-
-    #[inline(always)]
-    pub(crate) fn make_heap_entry<TPriority>(
-        remap_idx: MediatorIndex,
-        priority: TPriority,
-    ) -> HeapEntry<TPriority> {
-        HeapEntry {
-            outer_pos: remap_idx,
-            priority,
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn set_entry_priority<TPriority>(
-        entry: &mut HeapEntry<TPriority>,
-        new_priority: TPriority,
-    ) {
-        entry.priority = new_priority;
-    }
-
-    #[inline(always)]
-    pub(crate) fn make_heap_index(index: usize) -> HeapIndex {
-        HeapIndex(index)
-    }
-
-    pub(crate) fn create_heap<TPriority: Ord>(
-        vec: Vec<HeapEntry<TPriority>>,
-    ) -> BinaryHeap<TPriority> {
-        let heapify_start = std::cmp::min(vec.len() / 2 + 2, vec.len());
-        let mut res = BinaryHeap { data: vec };
-        for pos in (0..heapify_start).rev().map(HeapIndex) {
-            res.heapify_down(pos, |_, _| {});
-        }
-        res
-    }
-
-    #[inline(always)]
-    pub(crate) fn reader_iterator<TP: Ord>(
-        heap: &BinaryHeap<TP>,
-    ) -> impl Iterator<Item = (HeapIndex, &MediatorIndex)> {
-        heap.data
-            .iter()
-            .map(|x| &x.outer_pos)
-            .enumerate()
-            .map(|(i, r)| (HeapIndex(i), r))
     }
 }
 
@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn create_heap_test() {
+    fn create_heap_hash_test() {
         let priorities = [
             16i32, 16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3,
             -7, -5, -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7,
@@ -504,19 +504,14 @@ mod tests {
             -11, -10, -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20,
             -18, -8, 7,
         ];
-        let combined_vec: Vec<HeapEntry<i32>> = priorities
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(i, priority)| HeapEntry {
-                outer_pos: MediatorIndex(i),
-                priority,
-            })
-            .collect();
-        let heap = for_iteration_construction::create_heap(combined_vec);
+        let (heap, key_to_pos) =
+            BinaryHeap::produce_from_iter_hash(priorities.iter().cloned().map(|x| (x, x)));
         assert!(is_valid_heap(&heap), "Must be valid heap");
-        for v in heap.data {
-            assert_eq!(priorities[v.outer_pos.0], v.priority);
+        for (map_idx, (key, &heap_idx)) in key_to_pos.iter().enumerate() {
+            assert_eq!(
+                Some((MediatorIndex(map_idx), key)),
+                heap.look_into(heap_idx)
+            );
         }
     }
 

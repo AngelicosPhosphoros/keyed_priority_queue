@@ -410,7 +410,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// Always ***O(1)***
     #[inline]
     pub fn len(&self) -> usize {
-        debug_assert_eq!(self.key_to_pos.len(), self.heap.len().as_usize());
+        debug_assert_eq!(self.key_to_pos.len(), self.heap.usize_len());
         self.key_to_pos.len()
     }
 
@@ -728,41 +728,8 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     ///
     /// ***O(n log n)*** in average.
     fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
-        let iter = iter.into_iter();
-        use crate::editable_binary_heap::for_iteration_construction;
-        use crate::editable_binary_heap::for_iteration_construction::{
-            create_heap, make_heap_entry, make_heap_index, set_entry_priority,
-        };
-        use crate::editable_binary_heap::HeapEntry;
-
-        let min_size = iter.size_hint().0;
-        let max_size = iter.size_hint().1.unwrap_or(min_size);
-        let mut for_heap: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
-        let mut for_map: IndexMap<TKey, HeapIndex> = IndexMap::with_capacity(max_size);
-
-        for (key, priority) in iter {
-            match for_map.entry(key) {
-                MapEntry::Vacant(entry) => {
-                    let entry_index = entry.index();
-                    entry.insert(make_heap_index(for_heap.len()));
-                    for_heap.push(make_heap_entry(MediatorIndex(entry_index), priority));
-                }
-                MapEntry::Occupied(entry) => {
-                    let heap_index = *entry.get();
-                    set_entry_priority(&mut for_heap[heap_index.as_usize()], priority);
-                }
-            }
-        }
-
-        let heap = create_heap(for_heap);
-        for (heap_idx, &MediatorIndex(v)) in for_iteration_construction::reader_iterator(&heap) {
-            *for_map.get_index_mut(v).unwrap().1 = heap_idx;
-        }
-
-        Self {
-            heap,
-            key_to_pos: for_map,
-        }
+        let (heap, key_to_pos) = BinaryHeap::produce_from_iter_hash(iter);
+        Self { heap, key_to_pos }
     }
 }
 
