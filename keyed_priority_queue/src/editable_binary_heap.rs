@@ -34,7 +34,7 @@ impl<TPriority> HeapEntry<TPriority> {
     // For usings as HeapEntry::as_pair instead of closures in map
 
     #[inline(always)]
-    fn to_pair(self) -> (MediatorIndex, TPriority) {
+    fn conv_pair(self) -> (MediatorIndex, TPriority) {
         (self.outer_pos, self.priority)
     }
 
@@ -104,12 +104,12 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         }
         if position.plus1() == self.len() {
             let result = self.data.pop().unwrap();
-            return Some(result.to_pair());
+            return Some(result.conv_pair());
         }
 
         let result = self.data.swap_remove(position.0);
         self.heapify_down(position, change_handler);
-        Some(result.to_pair())
+        Some(result.conv_pair())
     }
 
     #[inline(always)]
@@ -236,13 +236,12 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         let HeapIndex(mut position) = position;
         while position > 0 {
             let parent_pos = (position - 1) / 2;
-            if self.data[parent_pos].priority < self.data[position].priority {
-                self.data.swap(parent_pos, position);
-                change_handler(self.data[position].outer_pos, HeapIndex(position));
-                position = parent_pos;
-            } else {
+            if self.data[parent_pos].priority >= self.data[position].priority {
                 break;
             }
+            self.data.swap(parent_pos, position);
+            change_handler(self.data[position].outer_pos, HeapIndex(position));
+            position = parent_pos;
         }
         change_handler(self.data[position].outer_pos, HeapIndex(position));
     }
@@ -270,13 +269,12 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
                 }
             };
 
-            if self.data[position].priority < self.data[max_child_idx].priority {
-                self.data.swap(position, max_child_idx);
-                change_handler(self.data[position].outer_pos, HeapIndex(position));
-                position = max_child_idx;
-            } else {
+            if self.data[position].priority >= self.data[max_child_idx].priority {
                 break;
             }
+            self.data.swap(position, max_child_idx);
+            change_handler(self.data[position].outer_pos, HeapIndex(position));
+            position = max_child_idx;
         }
         change_handler(self.data[position].outer_pos, HeapIndex(position));
     }
@@ -373,20 +371,13 @@ mod tests {
         ];
         let mut last_positions = HashMap::<MediatorIndex, HeapIndex>::new();
         let mut heap = BinaryHeap::<i32>::new();
-        let heap_ptr: *const BinaryHeap<i32> = &heap;
         let mut on_pos_change = |outer_pos: MediatorIndex, position: HeapIndex| {
-            // Hack to avoid borrow checker
-            let heap_local = unsafe { &*heap_ptr };
-            assert_eq!(heap_local.look_into(position).unwrap().0, outer_pos);
-            assert_eq!(
-                &items[outer_pos.0],
-                heap_local.look_into(position).unwrap().1
-            );
             last_positions.insert(outer_pos, position);
         };
         for (i, &x) in items.iter().enumerate() {
             heap.push(MediatorIndex(i), x, &mut on_pos_change);
         }
+        assert_eq!(heap.usize_len(), last_positions.len());
         for i in 0..items.len() {
             let rem_idx = MediatorIndex(i);
             assert!(
@@ -404,10 +395,6 @@ mod tests {
         let mut removed = HashSet::<MediatorIndex>::new();
         loop {
             let mut on_pos_change = |key: MediatorIndex, position: HeapIndex| {
-                // Hack to avoid borrow checker
-                let heap_local = unsafe { &*heap_ptr };
-                assert_eq!(heap_local.look_into(position).unwrap().0, key);
-                assert_eq!(items[key.0], *heap_local.look_into(position).unwrap().1);
                 last_positions.insert(key, position);
             };
             let popped = heap.remove(HeapIndex(0), &mut on_pos_change);
@@ -417,6 +404,7 @@ mod tests {
             let (key, _) = popped.unwrap();
             last_positions.remove(&key);
             removed.insert(key);
+            assert_eq!(heap.usize_len(), last_positions.len());
             for i in (0..items.len())
                 .into_iter()
                 .filter(|i| !removed.contains(&MediatorIndex(*i)))

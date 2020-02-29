@@ -527,11 +527,9 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         let MediatorIndex(map_pos) = position;
         let (_, &heap_idx) = key_to_pos.get_index(map_pos).unwrap();
 
-        let old_priority =
-            heap.change_priority(heap_idx, priority, |MediatorIndex(index), heap_idx| {
-                *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
-            });
-        old_priority
+        heap.change_priority(heap_idx, priority, |MediatorIndex(index), heap_idx| {
+            *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
+        })
     }
 
     fn get_key_index(&self, position: MediatorIndex) -> &TKey {

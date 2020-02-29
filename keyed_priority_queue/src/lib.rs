@@ -147,6 +147,7 @@
 //! ```
 //!
 
+#[forbid(unsafe_code)]
 mod editable_binary_heap;
 mod keyed_priority_queue;
 
