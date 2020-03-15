@@ -152,5 +152,6 @@ mod editable_binary_heap;
 mod keyed_priority_queue;
 
 pub use crate::keyed_priority_queue::{
-    Entry, KeyedPriorityQueue, KeyedPriorityQueueIterator, OccupiedEntry, VacantEntry,
+    Entry, KeyedPriorityQueue, KeyedPriorityQueueBorrowIter, KeyedPriorityQueueIterator,
+    OccupiedEntry, VacantEntry,
 };

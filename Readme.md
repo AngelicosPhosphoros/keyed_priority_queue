@@ -21,7 +21,7 @@ keyed_priority_queue = "0.1.*"
 The example of code:
 
 ```rust
-use keyed_priority_queue::KeyedPriorityQueue;
+use keyed_priority_queue::{KeyedPriorityQueue, Entry};
 
 let mut queue = KeyedPriorityQueue::new();
 
@@ -63,6 +63,21 @@ assert_eq!(queue.pop(), Some(("Fifth", 1)));
 assert_eq!(queue.pop(), Some(("Second", -1)));
 // Now queue is empty
 assert_eq!(queue.pop(), None);
+
+// There are Entry API if you want to avoid double hash lookups
+match queue.entry("Entry"){
+    Entry::Vacant(entry)=>entry.set_priority(10),
+    Entry::Occupied(_)=>unreachable!(),
+};
+
+match queue.entry("Entry"){
+    Entry::Vacant(_)=>unreachable!(),
+    Entry::Occupied(entry)=>{
+        assert_eq!(entry.get_key(), &"Entry");
+        assert_eq!(entry.get_priority(), &10);
+        entry.set_priority(5);
+    },
+};
 
 // We can clear queue
 queue.clear();

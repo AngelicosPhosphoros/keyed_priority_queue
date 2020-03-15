@@ -181,6 +181,12 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         self.data.clear()
     }
 
+    pub(crate) fn iter(&self) -> BinaryHeapIterator<TPriority> {
+        BinaryHeapIterator {
+            inner: self.data.iter(),
+        }
+    }
+
     pub(crate) fn produce_from_iter_hash<TKey, TIter>(
         iter: TIter,
     ) -> (Self, indexmap::IndexMap<TKey, HeapIndex>)
@@ -277,6 +283,36 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
             position = max_child_idx;
         }
         change_handler(self.data[position].outer_pos, HeapIndex(position));
+    }
+}
+
+/// Useful to create iterator for outer struct
+/// Does NOT guarantee any particular order
+pub(crate) struct BinaryHeapIterator<'a, TPriority> {
+    inner: std::slice::Iter<'a, HeapEntry<TPriority>>,
+}
+
+impl<'a, TPriority> Iterator for BinaryHeapIterator<'a, TPriority> {
+    type Item = (MediatorIndex, &'a TPriority);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|entry: &'a HeapEntry<TPriority>| (entry.outer_pos, &entry.priority))
+    }
+
+    #[inline(always)]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    #[inline(always)]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.inner.count()
     }
 }
 

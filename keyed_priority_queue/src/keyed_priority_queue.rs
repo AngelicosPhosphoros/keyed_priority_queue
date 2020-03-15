@@ -1,7 +1,7 @@
 use indexmap::map::{Entry as MapEntry, IndexMap};
 use std::hash::Hash;
 
-use crate::editable_binary_heap::{BinaryHeap, HeapIndex, MediatorIndex};
+use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex, MediatorIndex};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::iter::FromIterator;
@@ -451,6 +451,30 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         self.key_to_pos.clear();
     }
 
+    /// Create readonly borrowing iterator over heap
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use std::collections::HashMap;
+    /// let queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// let mut entries = HashMap::new();
+    /// for (&key, &priority) in queue.iter(){
+    ///     entries.insert(key, priority);
+    /// }
+    /// let second_map: HashMap<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// assert_eq!(entries, second_map);
+    /// ```
+    ///
+    /// ### Time complexity
+    ///
+    /// Iterating over whole queue is O(n)
+    pub fn iter(&self) -> KeyedPriorityQueueBorrowIter<TKey, TPriority> {
+        KeyedPriorityQueueBorrowIter {
+            key_to_pos: &self.key_to_pos,
+            heap_iterator: self.heap.iter(),
+        }
+    }
+
     // MUST be called only from VacantEntry
     #[inline(always)]
     fn remove_empty_entry(&mut self, position: MediatorIndex) {
@@ -687,22 +711,26 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
     }
 }
 
-impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug
+impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug> Debug
     for KeyedPriorityQueue<TKey, TPriority>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        self.heap.fmt(f)
+        write!(f, "[")?;
+        for entry in self.iter() {
+            write!(f, "{:?}", entry)?;
+        }
+        write!(f, "]")
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
     #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
+impl<TKey: Hash + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     for KeyedPriorityQueue<TKey, TPriority>
 {
     /// Allows building queue from iterator using `collect()`.
@@ -731,7 +759,7 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, TPriority> {
     type Item = (TKey, TPriority);
     type IntoIter = KeyedPriorityQueueIterator<TKey, TPriority>;
 
@@ -764,15 +792,13 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueu
 /// Overall complexity of iteration is ***O(n log n)***
 pub struct KeyedPriorityQueueIterator<TKey, TPriority>
 where
-    TKey: Hash + Clone + Eq,
+    TKey: Hash + Eq,
     TPriority: Ord,
 {
     queue: KeyedPriorityQueue<TKey, TPriority>,
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
-    for KeyedPriorityQueueIterator<TKey, TPriority>
-{
+impl<TKey: Hash + Eq, TPriority: Ord> Iterator for KeyedPriorityQueueIterator<TKey, TPriority> {
     type Item = (TKey, TPriority);
 
     #[inline]
@@ -791,6 +817,46 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
         Self: Sized,
     {
         self.queue.len()
+    }
+}
+
+pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+where
+    TKey: 'a + Hash + Eq,
+    TPriority: 'a,
+{
+    heap_iterator: BinaryHeapIterator<'a, TPriority>,
+    key_to_pos: &'a IndexMap<TKey, HeapIndex>,
+}
+
+impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
+    for KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+{
+    type Item = (&'a TKey, &'a TPriority);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let heap_iterator = &mut self.heap_iterator;
+        let key_to_pos = &self.key_to_pos;
+        heap_iterator
+            .next()
+            .map(|(MediatorIndex(index), priority)| {
+                let (key, _) = key_to_pos.get_index(index).unwrap();
+                (key, priority)
+            })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.heap_iterator.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.heap_iterator.count()
     }
 }
 
@@ -1017,5 +1083,62 @@ mod tests {
 
         assert_eq!(queue.len(), 4);
         assert_eq!(queue.get_priority(&"third"), None);
+    }
+
+    #[test]
+    fn test_borrow_iter() {
+        use std::collections::HashMap;
+        let items = [
+            ("first", 5i32),
+            ("third", 3),
+            ("second", 4),
+            ("fifth", 1),
+            ("fourth", 2),
+        ];
+
+        let queue: KeyedPriorityQueue<String, i32> =
+            items.iter().map(|&(k, p)| (k.to_owned(), p)).collect();
+
+        let mut map: HashMap<&str, i32> = HashMap::new();
+
+        let mut total_items = 0;
+        for (key, &value) in queue.iter() {
+            map.insert(key, value);
+            total_items += 1;
+        }
+        assert_eq!(items.len(), total_items);
+        assert_eq!(queue.len(), items.len());
+        let other_map: HashMap<_, _> = items.iter().cloned().collect();
+        assert_eq!(map, other_map);
+    }
+
+    #[test]
+    fn test_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<KeyedPriorityQueue<i32, i32>>();
+    }
+
+    #[test]
+    fn test_send() {
+        fn assert_sync<T: Send>() {}
+        assert_sync::<KeyedPriorityQueue<i32, i32>>();
+    }
+
+    #[test]
+    fn test_fmt() {
+        let items = [
+            ("first", 5i32),
+            ("second", 4),
+            ("third", 3),
+            ("fourth", 2),
+            ("fifth", 1),
+        ];
+
+        let queue: KeyedPriorityQueue<&str, i32> = items.iter().cloned().collect();
+
+        assert_eq!(
+            format!("{:?}", queue),
+            "[(\"first\", 5)(\"second\", 4)(\"third\", 3)(\"fourth\", 2)(\"fifth\", 1)]"
+        );
     }
 }
