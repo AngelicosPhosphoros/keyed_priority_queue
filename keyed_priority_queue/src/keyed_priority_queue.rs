@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex, MediatorIndex};
 use std::borrow::Borrow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
 
 /// A priority queue that support lookup by key.
@@ -306,26 +306,30 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     ///
     ///
     /// ```
-    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use keyed_priority_queue::{KeyedPriorityQueue, SetPriorityNotFoundError};
     /// let mut queue: KeyedPriorityQueue<&str, i32> = [("first", 0), ("second", 1), ("third", 2)]
     ///                             .iter().cloned().collect();
     /// assert_eq!(queue.set_priority(&"second", 5), Ok(1));
     /// assert_eq!(queue.get_priority(&"second"), Some(&5));
     /// assert_eq!(queue.pop(), Some(("second", 5)));
-    /// assert_eq!(queue.set_priority(&"Missing", 5), Err(()))
+    /// assert_eq!(queue.set_priority(&"Missing", 5), Err(SetPriorityNotFoundError{}));
     /// ```
     ///
     /// ### Time complexity
     ///
     /// In best case ***O(1)***, in average costs ***O(log n)***.
     #[inline]
-    pub fn set_priority<Q>(&mut self, key: &Q, priority: TPriority) -> Result<TPriority, ()>
+    pub fn set_priority<Q>(
+        &mut self,
+        key: &Q,
+        priority: TPriority,
+    ) -> Result<TPriority, SetPriorityNotFoundError>
     where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         let map_pos = match self.key_to_pos.get_full(key) {
-            None => return Err(()),
+            None => return Err(SetPriorityNotFoundError {}),
             Some((idx, _, _)) => idx,
         };
 
@@ -860,6 +864,19 @@ impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
     }
 }
 
+/// This is error type for `set_priority` method of `KeyedPriorityQueue`.
+/// It means that queue doesn't contain such key.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Default)]
+pub struct SetPriorityNotFoundError;
+
+impl Display for SetPriorityNotFoundError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "Key not found in KeyedPriorityQueue during set_priority")
+    }
+}
+
+impl std::error::Error for SetPriorityNotFoundError {}
+
 #[cfg(test)]
 mod tests {
     use super::KeyedPriorityQueue;
@@ -934,7 +951,10 @@ mod tests {
         ];
 
         let mut queue: KeyedPriorityQueue<&str, i32> = items.iter().cloned().collect();
-        assert_eq!(queue.set_priority(&"HELLO", 64), Err(()));
+        assert_eq!(
+            queue.set_priority(&"HELLO", 64),
+            Err(super::SetPriorityNotFoundError::default())
+        );
         let old_priority = *queue.get_priority(&"fifth").unwrap();
         assert_eq!(queue.set_priority(&"fifth", old_priority + 10), Ok(1));
         assert_eq!(queue.get_priority(&"fifth"), Some(&11));

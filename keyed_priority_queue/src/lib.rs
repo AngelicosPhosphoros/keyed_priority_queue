@@ -153,5 +153,5 @@ mod keyed_priority_queue;
 
 pub use crate::keyed_priority_queue::{
     Entry, KeyedPriorityQueue, KeyedPriorityQueueBorrowIter, KeyedPriorityQueueIterator,
-    OccupiedEntry, VacantEntry,
+    OccupiedEntry, SetPriorityNotFoundError, VacantEntry,
 };

@@ -27,7 +27,7 @@ pub fn bench_set_priority(c: &mut Criterion) {
                 || {
                     (
                         base_queue.clone(),
-                        Vec::<Result<usize, ()>>::with_capacity(test_keys.len()),
+                        Vec::<Result<usize, _>>::with_capacity(test_keys.len()),
                     )
                 },
                 |(mut queue, mut results_store)| {
@@ -63,7 +63,7 @@ pub fn bench_set_priority(c: &mut Criterion) {
                 || {
                     (
                         base_queue.clone(),
-                        Vec::<Result<String, ()>>::with_capacity(test_keys.len()),
+                        Vec::<Result<String, _>>::with_capacity(test_keys.len()),
                     )
                 },
                 |(mut queue, mut results_store)| {
