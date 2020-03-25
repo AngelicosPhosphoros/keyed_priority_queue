@@ -1,6 +1,6 @@
 extern crate criterion;
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use keyed_priority_queue::KeyedPriorityQueue;
 
 mod generators;
@@ -24,12 +24,17 @@ pub fn bench_set_priority(c: &mut Criterion) {
                 .zip(base_values[..size].iter().cloned())
                 .collect();
             b.iter_batched(
-                || base_queue.clone(),
-                |mut queue| {
+                || {
+                    (
+                        base_queue.clone(),
+                        Vec::<Result<usize, _>>::with_capacity(test_keys.len()),
+                    )
+                },
+                |(mut queue, mut results_store)| {
                     for (&k, &v) in test_keys.iter().zip(test_vals.iter()) {
-                        black_box(queue.set_priority(&k, v));
+                        results_store.push(queue.set_priority(&k, v));
                     }
-                    queue
+                    (queue, results_store)
                 },
                 BatchSize::LargeInput,
             );
@@ -55,12 +60,17 @@ pub fn bench_set_priority(c: &mut Criterion) {
                 .zip(base_values[..size].iter().cloned())
                 .collect();
             b.iter_batched(
-                || base_queue.clone(),
-                |mut queue| {
+                || {
+                    (
+                        base_queue.clone(),
+                        Vec::<Result<String, _>>::with_capacity(test_keys.len()),
+                    )
+                },
+                |(mut queue, mut results_store)| {
                     for (k, v) in test_keys.iter().zip(test_vals.iter()) {
-                        black_box(queue.set_priority(k, v.clone()));
+                        results_store.push(queue.set_priority(k, v.clone()));
                     }
-                    queue
+                    (queue, results_store)
                 },
                 BatchSize::LargeInput,
             );

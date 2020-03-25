@@ -1,10 +1,9 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use indexmap::map::{Entry as MapEntry, IndexMap};
 use std::hash::Hash;
 
-use crate::internal_remapping::{QueueWrapper, RemapIndex};
+use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex, MediatorIndex};
 use std::borrow::Borrow;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
 
 /// A priority queue that support lookup by key.
@@ -115,14 +114,14 @@ use std::iter::FromIterator;
 /// ```
 pub struct KeyedPriorityQueue<TKey, TPriority>
 where
-    TKey: Hash + Clone + Eq,
+    TKey: Hash + Eq,
     TPriority: Ord,
 {
-    queue: QueueWrapper<TKey, TPriority>,
-    key_to_pos: HashMap<TKey, RemapIndex>,
+    heap: BinaryHeap<TPriority>,
+    key_to_pos: IndexMap<TKey, HeapIndex>,
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// Creates an empty queue
     ///
     /// ### Examples
@@ -133,10 +132,11 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// let mut queue = KeyedPriorityQueue::new();
     /// queue.push("Key", 4);
     /// ```
+    #[inline]
     pub fn new() -> Self {
         Self {
-            queue: QueueWrapper::new(),
-            key_to_pos: HashMap::new(),
+            heap: BinaryHeap::new(),
+            key_to_pos: IndexMap::new(),
         }
     }
 
@@ -151,10 +151,11 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// let mut queue = KeyedPriorityQueue::with_capacity(10);
     /// queue.push("Key", 4);
     /// ```
+    #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            queue: QueueWrapper::with_capacity(capacity),
-            key_to_pos: HashMap::with_capacity(capacity),
+            heap: BinaryHeap::with_capacity(capacity),
+            key_to_pos: IndexMap::with_capacity(capacity),
         }
     }
 
@@ -174,8 +175,9 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// queue.reserve(100);
     /// queue.push(4, 4);
     /// ```
+    #[inline]
     pub fn reserve(&mut self, additional: usize) {
-        self.queue.reserve(additional);
+        self.heap.reserve(additional);
         self.key_to_pos.reserve(additional);
     }
 
@@ -201,17 +203,13 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// The worst case is when reallocation appears.
     /// In this case complexity of single call is ***O(n)***.
-    pub fn push(&mut self, key: TKey, priority: TPriority) {
-        // Borrow checker treats borrowing a field as borrowing whole structure
-        // so we need to get references to fields to borrow them individually.
-        let queue = &mut self.queue;
-        let key_to_pos = &mut self.key_to_pos;
-        match key_to_pos.entry(key) {
+    pub fn push(&mut self, key: TKey, priority: TPriority) -> Option<TPriority> {
+        match self.entry(key) {
             Entry::Vacant(entry) => {
-                let queue_idx = queue.push(entry.key().clone(), priority);
-                entry.insert(queue_idx);
+                entry.set_priority(priority);
+                None
             }
-            Entry::Occupied(entry) => queue.set_priority(*entry.get(), priority),
+            Entry::Occupied(entry) => Some(entry.set_priority(priority)),
         }
     }
 
@@ -234,16 +232,8 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Cost of pop is always ***O(log n)***
     pub fn pop(&mut self) -> Option<(TKey, TPriority)> {
-        let queue = &mut self.queue;
-        let key_to_pos = &mut self.key_to_pos;
-
-        let (key, priority, map_change) = queue.pop()?;
-        key_to_pos.remove(&key);
-        if let Some(map_change) = map_change {
-            *key_to_pos.get_mut(map_change.key.borrow()).unwrap() = map_change.new_pos;
-        }
-
-        Some((key, priority))
+        let (to_remove, _) = self.heap.most_prioritized_idx()?;
+        Some(self.remove_internal(to_remove))
     }
 
     /// Get reference to the pair with the maximal priority.
@@ -261,7 +251,28 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// Always ***O(1)***
     pub fn peek(&self) -> Option<(&TKey, &TPriority)> {
-        self.queue.peek()
+        let (MediatorIndex(first_idx), heap_idx) = self.heap.most_prioritized_idx()?;
+        let (key, _) = self.key_to_pos.get_index(first_idx).unwrap();
+        let (_, priority) = self.heap.look_into(heap_idx).unwrap();
+        Some((key, priority))
+    }
+
+    /// Gets the given key's corresponding entry in the map for in-place manipulation.
+    ///
+    /// ## Time complexity
+    /// Amortized ***O(1)***, uses only one hash lookup
+    pub fn entry(&mut self, key: TKey) -> Entry<TKey, TPriority> {
+        match self.key_to_pos.entry(key) {
+            MapEntry::Vacant(map_entry) => {
+                let index = MediatorIndex(map_entry.index());
+                map_entry.insert(HeapIndex::UNINIT);
+                Entry::Vacant(VacantEntry { index, queue: self })
+            }
+            MapEntry::Occupied(map_entry) => {
+                let index = MediatorIndex(map_entry.index());
+                Entry::Occupied(OccupiedEntry { index, queue: self })
+            }
+        }
     }
 
     /// Get reference to the priority by key.
@@ -278,56 +289,57 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     ///
     /// ### Time complexity
     ///
-    /// ***O(1)*** in average (limited by HashMap key lookup).
+    /// ***O(1)*** in average (limited by hash map key lookup).
     pub fn get_priority<Q>(&self, key: &Q) -> Option<&TPriority>
     where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let index = *self.key_to_pos.get(key)?;
-        Some(self.queue.get_priority(index))
+        let heap_idx = *self.key_to_pos.get(key)?;
+        Some(self.heap.look_into(heap_idx).unwrap().1)
     }
 
-    /// Set new priority by key and reorder the queue.
+    /// Set new priority for existing key and reorder the queue.
+    /// Returns old priority if succeeds or [`SetPriorityNotFoundError`].
     ///
     /// ### Examples
     ///
     ///
     /// ```
-    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use keyed_priority_queue::{KeyedPriorityQueue, SetPriorityNotFoundError};
     /// let mut queue: KeyedPriorityQueue<&str, i32> = [("first", 0), ("second", 1), ("third", 2)]
     ///                             .iter().cloned().collect();
-    /// queue.set_priority(&"second", 5);
+    /// assert_eq!(queue.set_priority(&"second", 5), Ok(1));
     /// assert_eq!(queue.get_priority(&"second"), Some(&5));
     /// assert_eq!(queue.pop(), Some(("second", 5)));
+    /// assert_eq!(queue.set_priority(&"Missing", 5), Err(SetPriorityNotFoundError{}));
     /// ```
     ///
     /// ### Time complexity
     ///
     /// In best case ***O(1)***, in average costs ***O(log n)***.
     ///
-    /// ### Panics
-    ///
-    /// The function panics if key is missing.
-    /// ```rust,should_panic
-    /// use keyed_priority_queue::KeyedPriorityQueue;
-    /// let mut queue: KeyedPriorityQueue<&str, i32> = [("first", 0), ("second", 1), ("third", 2)]
-    ///                             .iter().cloned().collect();
-    /// queue.set_priority(&"Missing", 5);
-    /// ```
-    pub fn set_priority<Q>(&mut self, key: &Q, priority: TPriority)
+    /// [`SetPriorityNotFoundError`]: struct.SetPriorityNotFoundError.html
+    #[inline]
+    pub fn set_priority<Q>(
+        &mut self,
+        key: &Q,
+        priority: TPriority,
+    ) -> Result<TPriority, SetPriorityNotFoundError>
     where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let index = match self.key_to_pos.get(key) {
-            None => panic!("Tried to set_priority with unknown key"),
-            Some(&idx) => idx,
+        let map_pos = match self.key_to_pos.get_full(key) {
+            None => return Err(SetPriorityNotFoundError {}),
+            Some((idx, _, _)) => idx,
         };
-        self.queue.set_priority(index, priority);
+
+        Ok(self.set_priority_internal(MediatorIndex(map_pos), priority))
     }
 
     /// Allow removing item by key.
+    /// Returns priority if succeeds.
     ///
     /// ### Examples
     ///
@@ -335,34 +347,57 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ```
     /// use keyed_priority_queue::KeyedPriorityQueue;
     /// let mut queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
-    /// assert_eq!(queue.remove_item(&2), Some(2));
+    /// assert_eq!(queue.remove(&2), Some(2));
     /// assert_eq!(queue.pop(), Some((4,4)));
     /// assert_eq!(queue.pop(), Some((3,3)));
     /// // There is no 2
     /// assert_eq!(queue.pop(), Some((1,1)));
     /// assert_eq!(queue.pop(), Some((0,0)));
-    /// assert_eq!(queue.remove_item(&10), None);
+    /// assert_eq!(queue.remove(&10), None);
     /// ```
     ///
     /// ### Time complexity
     ///
     /// On average the function will require ***O(log n)*** operations.
-    pub fn remove_item<Q>(&mut self, key: &Q) -> Option<TPriority>
+    #[inline(always)]
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<TPriority>
     where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let key_to_pos = &mut self.key_to_pos;
-        let queue = &mut self.queue;
-
-        let index = *key_to_pos.get(key)?;
-        let (_, priority, map_change) = queue.remove_item(index);
-
-        key_to_pos.remove(key);
-        if let Some(map_change) = map_change {
-            *key_to_pos.get_mut(map_change.key.borrow()).unwrap() = map_change.new_pos;
-        }
+        let (_, priority) = self.remove_entry(key)?;
         Some(priority)
+    }
+
+    /// Allow removing item by key.
+    /// Returns key and priority if succeeds.
+    ///
+    /// ### Examples
+    ///
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// let mut queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// assert_eq!(queue.remove_entry(&2), Some((2, 2)));
+    /// assert_eq!(queue.pop(), Some((4,4)));
+    /// assert_eq!(queue.pop(), Some((3,3)));
+    /// // There is no 2
+    /// assert_eq!(queue.pop(), Some((1,1)));
+    /// assert_eq!(queue.pop(), Some((0,0)));
+    /// assert_eq!(queue.remove_entry(&10), None);
+    /// ```
+    ///
+    /// ### Time complexity
+    ///
+    /// On average the function will require ***O(log n)*** operations.
+    #[inline]
+    pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(TKey, TPriority)>
+    where
+        TKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        let (index, _, _) = self.key_to_pos.get_full(key)?;
+        Some(self.remove_internal(MediatorIndex(index)))
     }
 
     /// Get the number of elements in queue.
@@ -379,8 +414,9 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ### Time complexity
     ///
     /// Always ***O(1)***
+    #[inline]
     pub fn len(&self) -> usize {
-        debug_assert_eq!(self.key_to_pos.len(), self.queue.len().as_usize());
+        debug_assert_eq!(self.key_to_pos.len(), self.heap.usize_len());
         self.key_to_pos.len()
     }
 
@@ -396,8 +432,9 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ### Time complexity
     ///
     /// Always ***O(1)***
+    #[inline]
     pub fn is_empty(&self) -> bool {
-        debug_assert_eq!(self.queue.is_empty(), self.key_to_pos.is_empty());
+        debug_assert_eq!(self.heap.is_empty(), self.key_to_pos.is_empty());
         self.key_to_pos.is_empty()
     }
 
@@ -414,9 +451,238 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority
     /// ### Time complexity
     ///
     /// Always ***O(n)***
+    #[inline]
     pub fn clear(&mut self) {
-        self.queue.clear();
+        self.heap.clear();
         self.key_to_pos.clear();
+    }
+
+    /// Create readonly borrowing iterator over heap
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use std::collections::HashMap;
+    /// let queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// let mut entries = HashMap::new();
+    /// for (&key, &priority) in queue.iter(){
+    ///     entries.insert(key, priority);
+    /// }
+    /// let second_map: HashMap<i32, i32> = (0..5).map(|x|(x,x)).collect();
+    /// assert_eq!(entries, second_map);
+    /// ```
+    ///
+    /// ### Time complexity
+    ///
+    /// Iterating over whole queue is ***O(n)***
+    pub fn iter(&self) -> KeyedPriorityQueueBorrowIter<TKey, TPriority> {
+        KeyedPriorityQueueBorrowIter {
+            key_to_pos: &self.key_to_pos,
+            heap_iterator: self.heap.iter(),
+        }
+    }
+
+    // MUST be called only from VacantEntry
+    #[inline(always)]
+    fn remove_empty_entry(&mut self, position: MediatorIndex) {
+        let MediatorIndex(position) = position;
+        debug_assert_eq!(
+            *self.key_to_pos.get_index(position).unwrap().1,
+            HeapIndex::UNINIT
+        );
+        debug_assert_eq!(self.key_to_pos.len(), position + 1);
+        self.key_to_pos.swap_remove_index(position);
+    }
+
+    // MUST be called only during insertions to the map slot with UNINIT state
+    fn insert_priority_to_empty(&mut self, position: MediatorIndex, priority: TPriority) {
+        let MediatorIndex(position) = position;
+        debug_assert_eq!(
+            *self.key_to_pos.get_index(position).unwrap().1,
+            HeapIndex::UNINIT
+        );
+
+        // Borrow checker treats borrowing a field as borrowing whole structure
+        // so we need to get references to fields to borrow them individually.
+        let key_to_pos = &mut self.key_to_pos;
+        let heap = &mut self.heap;
+
+        *key_to_pos.get_index_mut(position).unwrap().1 = heap.len();
+        heap.push(
+            MediatorIndex(position),
+            priority,
+            |MediatorIndex(index), heap_idx| *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx,
+        );
+    }
+
+    // Removes entry from by index of map
+    fn remove_internal(&mut self, position: MediatorIndex) -> (TKey, TPriority) {
+        // Borrow checker treats borrowing a field as borrowing whole structure
+        // so we need to get references to fields to borrow them individually.
+        let key_to_pos = &mut self.key_to_pos;
+        let heap = &mut self.heap;
+
+        let MediatorIndex(map_pos) = position;
+        let (_, &heap_to_rem) = key_to_pos.get_index(map_pos).unwrap();
+
+        let (MediatorIndex(removed_idx), priority) = heap
+            .remove(heap_to_rem, |MediatorIndex(index), heap_idx| {
+                *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
+            })
+            .unwrap();
+        debug_assert_eq!(map_pos, removed_idx);
+
+        let (removed_key, _) = key_to_pos.swap_remove_index(map_pos).unwrap();
+        if let Some((_, &heap_idx_moved)) = key_to_pos.get_index(removed_idx) {
+            heap.change_outer_pos(MediatorIndex(removed_idx), heap_idx_moved);
+        }
+
+        (removed_key, priority)
+    }
+
+    // gets priority by map index
+    fn get_priority_index(&self, position: MediatorIndex) -> &TPriority {
+        let MediatorIndex(position) = position;
+        let (_, &heap_idx) = self.key_to_pos.get_index(position).unwrap();
+        let (_, priority) = self.heap.look_into(heap_idx).unwrap();
+        priority
+    }
+
+    // Do O(log n) heap updates and by-index map changes
+    fn set_priority_internal(&mut self, position: MediatorIndex, priority: TPriority) -> TPriority {
+        // Borrow checker treats borrowing a field as borrowing whole structure
+        // so we need to get references to fields to borrow them individually.
+        let heap = &mut self.heap;
+        let key_to_pos = &mut self.key_to_pos;
+
+        let MediatorIndex(map_pos) = position;
+        let (_, &heap_idx) = key_to_pos.get_index(map_pos).unwrap();
+
+        heap.change_priority(heap_idx, priority, |MediatorIndex(index), heap_idx| {
+            *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
+        })
+    }
+
+    fn get_key_index(&self, position: MediatorIndex) -> &TKey {
+        let MediatorIndex(position) = position;
+        let (key, _) = self.key_to_pos.get_index(position).unwrap();
+        key
+    }
+}
+
+/// A view into a single entry in a queue, which may either be vacant or occupied.
+///
+/// This `enum` is constructed from the [`entry`] method on [`KeyedPriorityQueue`].
+///
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
+/// [`entry`]: struct.KeyedPriorityQueue.html#method.entry
+pub enum Entry<'a, TKey: Eq + Hash, TPriority: Ord> {
+    /// An occupied entry.
+    Occupied(OccupiedEntry<'a, TKey, TPriority>),
+
+    /// A vacant entry.
+    Vacant(VacantEntry<'a, TKey, TPriority>),
+}
+
+/// A view into an occupied entry in a [`KeyedPriorityQueue`].
+/// It is part of the [`Entry`] enum.
+///
+/// [`Entry`]: enum.Entry.html
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
+pub struct OccupiedEntry<'a, TKey, TPriority>
+where
+    TKey: 'a + Eq + Hash,
+    TPriority: 'a + Ord,
+{
+    index: MediatorIndex,
+    queue: &'a mut KeyedPriorityQueue<TKey, TPriority>,
+}
+
+impl<'a, TKey, TPriority> OccupiedEntry<'a, TKey, TPriority>
+where
+    TKey: 'a + Eq + Hash,
+    TPriority: 'a + Ord,
+{
+    /// Returns reference to the priority associated to entry
+    ///
+    /// ## Time complexity
+    /// ***O(1)*** instant access
+    pub fn get_priority(&self) -> &TPriority {
+        self.queue.get_priority_index(self.index)
+    }
+
+    /// Changes priority of key and returns old priority
+    ///
+    /// ## Time complexity
+    /// Up to ***O(log n)*** operations in worst case
+    /// ***O(1)*** in best case
+    pub fn set_priority(self, priority: TPriority) -> TPriority {
+        self.queue.set_priority_internal(self.index, priority)
+    }
+
+    /// Get the reference to actual key
+    ///
+    /// ## Time complexity
+    /// ***O(1)*** instant access
+    pub fn get_key(&self) -> &TKey {
+        self.queue.get_key_index(self.index)
+    }
+
+    /// Remove entry from queue
+    ///
+    /// ## Time complexity
+    /// Up to ***O(log n)*** operations
+    pub fn remove(self) -> (TKey, TPriority) {
+        self.queue.remove_internal(self.index)
+    }
+}
+
+/// A view into a vacant entry in a [`KeyedPriorityQueue`].
+/// It is part of the [`Entry`] enum.
+///
+/// [`Entry`]: enum.Entry.html
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
+pub struct VacantEntry<'a, TKey, TPriority>
+where
+    TKey: 'a + Eq + Hash,
+    TPriority: 'a + Ord,
+{
+    index: MediatorIndex,
+    queue: &'a mut KeyedPriorityQueue<TKey, TPriority>,
+}
+
+impl<'a, TKey, TPriority> VacantEntry<'a, TKey, TPriority>
+where
+    TKey: 'a + Eq + Hash,
+    TPriority: 'a + Ord,
+{
+    /// Insert priority of key to queue
+    ///
+    /// ## Time complexity
+    /// Up to ***O(log n)*** operations
+    pub fn set_priority(self, priority: TPriority) {
+        self.queue.insert_priority_to_empty(self.index, priority);
+    }
+
+    /// Get the reference to actual key
+    ///
+    /// ## Time complexity
+    /// ***O(1)*** instant access
+    pub fn get_key(&self) -> &TKey {
+        self.queue.get_key_index(self.index)
+    }
+}
+
+// We need to remove back empty entry if it wasn't used
+impl<'a, TKey, TPriority> Drop for VacantEntry<'a, TKey, TPriority>
+where
+    TKey: 'a + Eq + Hash,
+    TPriority: 'a + Ord,
+{
+    fn drop(&mut self) {
+        let MediatorIndex(pos) = self.index;
+        if HeapIndex::UNINIT == *self.queue.key_to_pos.get_index(pos).unwrap().1 {
+            self.queue.remove_empty_entry(self.index);
+        }
     }
 }
 
@@ -444,30 +710,35 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
     ///
     /// Always ***O(n)***
     #[must_use = "cloning is often expensive and is not expected to have side effects"]
+    #[inline]
     fn clone(&self) -> Self {
         Self {
-            queue: self.queue.clone(),
+            heap: self.heap.clone(),
             key_to_pos: self.key_to_pos.clone(),
         }
     }
 }
 
-impl<TKey: Hash + Clone + Eq + Debug, TPriority: Ord + Debug> Debug
+impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug> Debug
     for KeyedPriorityQueue<TKey, TPriority>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        self.queue.fmt(f)
+        write!(f, "[")?;
+        for entry in self.iter() {
+            write!(f, "{:?}", entry)?;
+        }
+        write!(f, "]")
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
     #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
+impl<TKey: Hash + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     for KeyedPriorityQueue<TKey, TPriority>
 {
     /// Allows building queue from iterator using `collect()`.
@@ -491,12 +762,12 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
     ///
     /// ***O(n log n)*** in average.
     fn from_iter<T: IntoIterator<Item = (TKey, TPriority)>>(iter: T) -> Self {
-        let (queue, key_to_pos) = QueueWrapper::build_from_iterator(iter.into_iter());
-        Self { queue, key_to_pos }
+        let (heap, key_to_pos) = BinaryHeap::produce_from_iter_hash(iter);
+        Self { heap, key_to_pos }
     }
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, TPriority> {
     type Item = (TKey, TPriority);
     type IntoIter = KeyedPriorityQueueIterator<TKey, TPriority>;
 
@@ -525,27 +796,32 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueu
     }
 }
 
+/// This is consuming iterator that returns elements in decreasing order
+///
+/// ### Time complexity
+/// Overall complexity of iteration is ***O(n log n)***
 pub struct KeyedPriorityQueueIterator<TKey, TPriority>
 where
-    TKey: Hash + Clone + Eq,
+    TKey: Hash + Eq,
     TPriority: Ord,
 {
     queue: KeyedPriorityQueue<TKey, TPriority>,
 }
 
-impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
-    for KeyedPriorityQueueIterator<TKey, TPriority>
-{
+impl<TKey: Hash + Eq, TPriority: Ord> Iterator for KeyedPriorityQueueIterator<TKey, TPriority> {
     type Item = (TKey, TPriority);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.queue.pop()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (self.queue.len(), Some(self.queue.len()))
     }
 
+    #[inline]
     fn count(self) -> usize
     where
         Self: Sized,
@@ -553,6 +829,66 @@ impl<TKey: Hash + Clone + Eq, TPriority: Ord> Iterator
         self.queue.len()
     }
 }
+
+/// This is unordered borrowing iterator over queue.
+///
+/// ### Time complexity
+/// Overall complexity of iteration is ***O(n)***
+pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+where
+    TKey: 'a + Hash + Eq,
+    TPriority: 'a,
+{
+    heap_iterator: BinaryHeapIterator<'a, TPriority>,
+    key_to_pos: &'a IndexMap<TKey, HeapIndex>,
+}
+
+impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
+    for KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+{
+    type Item = (&'a TKey, &'a TPriority);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let heap_iterator = &mut self.heap_iterator;
+        let key_to_pos = &self.key_to_pos;
+        heap_iterator
+            .next()
+            .map(|(MediatorIndex(index), priority)| {
+                let (key, _) = key_to_pos.get_index(index).unwrap();
+                (key, priority)
+            })
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.heap_iterator.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.heap_iterator.count()
+    }
+}
+
+/// This is error type for [`set_priority`] method of [`KeyedPriorityQueue`].
+/// It means that queue doesn't contain such key.
+///
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
+/// [`set_priority`]: struct.KeyedPriorityQueue.html#method.set_priority
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Default)]
+pub struct SetPriorityNotFoundError;
+
+impl Display for SetPriorityNotFoundError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "Key not found in KeyedPriorityQueue during set_priority")
+    }
+}
+
+impl std::error::Error for SetPriorityNotFoundError {}
 
 #[cfg(test)]
 mod tests {
@@ -628,13 +964,17 @@ mod tests {
         ];
 
         let mut queue: KeyedPriorityQueue<&str, i32> = items.iter().cloned().collect();
+        assert_eq!(
+            queue.set_priority(&"HELLO", 64),
+            Err(super::SetPriorityNotFoundError::default())
+        );
         let old_priority = *queue.get_priority(&"fifth").unwrap();
-        queue.set_priority(&"fifth", old_priority + 10);
+        assert_eq!(queue.set_priority(&"fifth", old_priority + 10), Ok(1));
         assert_eq!(queue.get_priority(&"fifth"), Some(&11));
         assert_eq!(queue.pop(), Some(("fifth", 11)));
 
         let old_priority = *queue.get_priority(&"first").unwrap();
-        queue.set_priority(&"first", old_priority - 10);
+        assert_eq!(queue.set_priority(&"first", old_priority - 10), Ok(5));
         assert_eq!(queue.get_priority(&"first"), Some(&-5));
         queue.pop();
         queue.pop();
@@ -646,7 +986,8 @@ mod tests {
     fn test_remove_items() {
         let mut items = [1, 4, 5, 2, 3];
         let mut queue: KeyedPriorityQueue<i32, i32> = items.iter().map(|&x| (x, x)).collect();
-        queue.remove_item(&3);
+        assert_eq!(queue.remove_entry(&3), Some((3, 3)));
+        assert_eq!(queue.remove_entry(&20), None);
         assert_eq!(queue.len(), items.len() - 1);
         assert_eq!(queue.get_priority(&3), None);
         items.sort_unstable_by_key(|&x| -x);
@@ -698,5 +1039,139 @@ mod tests {
         let str_ref: &str = &string;
         assert_eq!(queue.get_priority(string_ref), Some(&5));
         assert_eq!(queue.get_priority(str_ref), Some(&5));
+    }
+
+    #[test]
+    fn test_entry_vacant() {
+        use super::Entry;
+
+        let items = [
+            ("first", 5i32),
+            ("second", 4),
+            ("third", 3),
+            ("fourth", 2),
+            ("fifth", 1),
+        ];
+
+        let mut queue = KeyedPriorityQueue::new();
+
+        for &(k, v) in items.iter() {
+            queue.push(k, v);
+        }
+
+        assert_eq!(queue.len(), 5);
+        match queue.entry("Cotton") {
+            Entry::Occupied(_) => unreachable!(),
+            Entry::Vacant(entry) => {
+                assert_eq!(entry.get_key(), &"Cotton");
+                entry.set_priority(10);
+            }
+        };
+        assert_eq!(queue.len(), 6);
+        assert_eq!(queue.get_priority(&"Cotton"), Some(&10));
+        match queue.entry("Cotton") {
+            Entry::Occupied(entry) => {
+                assert_eq!(entry.get_key(), &"Cotton");
+                assert_eq!(entry.get_priority(), &10);
+            }
+            Entry::Vacant(_) => unreachable!(),
+        };
+    }
+
+    #[test]
+    fn test_entry_occupied() {
+        use super::Entry;
+
+        let items = [
+            ("first", 5i32),
+            ("second", 4),
+            ("third", 3),
+            ("fourth", 2),
+            ("fifth", 1),
+        ];
+
+        let mut queue = KeyedPriorityQueue::new();
+
+        for &(k, v) in items.iter() {
+            queue.push(k, v);
+        }
+
+        assert_eq!(queue.len(), 5);
+        match queue.entry("third") {
+            Entry::Occupied(entry) => {
+                assert_eq!(entry.get_key(), &"third");
+                assert_eq!(entry.get_priority(), &3);
+                assert_eq!(entry.set_priority(5), 3);
+            }
+            Entry::Vacant(_) => unreachable!(),
+        };
+        assert_eq!(queue.len(), 5);
+        assert_eq!(queue.get_priority(&"third"), Some(&5));
+        match queue.entry("third") {
+            Entry::Occupied(entry) => {
+                assert_eq!(entry.remove(), ("third", 5));
+            }
+            Entry::Vacant(_) => unreachable!(),
+        };
+
+        assert_eq!(queue.len(), 4);
+        assert_eq!(queue.get_priority(&"third"), None);
+    }
+
+    #[test]
+    fn test_borrow_iter() {
+        use std::collections::HashMap;
+        let items = [
+            ("first", 5i32),
+            ("third", 3),
+            ("second", 4),
+            ("fifth", 1),
+            ("fourth", 2),
+        ];
+
+        let queue: KeyedPriorityQueue<String, i32> =
+            items.iter().map(|&(k, p)| (k.to_owned(), p)).collect();
+
+        let mut map: HashMap<&str, i32> = HashMap::new();
+
+        let mut total_items = 0;
+        for (key, &value) in queue.iter() {
+            map.insert(key, value);
+            total_items += 1;
+        }
+        assert_eq!(items.len(), total_items);
+        assert_eq!(queue.len(), items.len());
+        let other_map: HashMap<_, _> = items.iter().cloned().collect();
+        assert_eq!(map, other_map);
+    }
+
+    #[test]
+    fn test_sync() {
+        fn assert_sync<T: Sync>() {}
+        assert_sync::<KeyedPriorityQueue<i32, i32>>();
+    }
+
+    #[test]
+    fn test_send() {
+        fn assert_sync<T: Send>() {}
+        assert_sync::<KeyedPriorityQueue<i32, i32>>();
+    }
+
+    #[test]
+    fn test_fmt() {
+        let items = [
+            ("first", 5i32),
+            ("second", 4),
+            ("third", 3),
+            ("fourth", 2),
+            ("fifth", 1),
+        ];
+
+        let queue: KeyedPriorityQueue<&str, i32> = items.iter().cloned().collect();
+
+        assert_eq!(
+            format!("{:?}", queue),
+            "[(\"first\", 5)(\"second\", 4)(\"third\", 3)(\"fourth\", 2)(\"fifth\", 1)]"
+        );
     }
 }

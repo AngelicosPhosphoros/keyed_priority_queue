@@ -2,21 +2,51 @@ use std::cmp::{Ord, Ordering};
 use std::fmt::Debug;
 use std::vec::Vec;
 
-use crate::internal_remapping::RemapIndex;
-
+/// Wrapper around usize that can be used only as index of `BinaryHeap`
+/// Mostly needed to statically check that
+/// Heap is not indexed by any other collection index
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 pub(crate) struct HeapIndex(usize);
 
 impl HeapIndex {
+    /// This value never can be reached so used as UNINIT
+    /// Even if we can address usize::MAX bytes
+    /// We cannot keep so many entries in heap because each of them contains at least size_of(usize) bytes.
+    pub(crate) const UNINIT: HeapIndex = HeapIndex(std::usize::MAX);
+
     #[inline(always)]
-    pub(crate) fn as_usize(self) -> usize {
-        self.0
+    const fn plus1(self) -> Self {
+        Self(self.0 + 1)
     }
 }
 
-pub(crate) struct HeapEntry<TPriority> {
-    key: RemapIndex,
+/// Wrapper around possible outer vec index
+/// Used to avoid using as heap index
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
+pub(crate) struct MediatorIndex(pub(crate) usize);
+
+struct HeapEntry<TPriority> {
+    outer_pos: MediatorIndex,
     priority: TPriority,
+}
+
+impl<TPriority> HeapEntry<TPriority> {
+    // For usings as HeapEntry::as_pair instead of closures in map
+
+    #[inline(always)]
+    fn conv_pair(self) -> (MediatorIndex, TPriority) {
+        (self.outer_pos, self.priority)
+    }
+
+    #[inline(always)]
+    fn to_pair_ref(&self) -> (MediatorIndex, &TPriority) {
+        (self.outer_pos, &self.priority)
+    }
+
+    #[inline(always)]
+    fn to_outer(&self) -> MediatorIndex {
+        self.outer_pos
+    }
 }
 
 pub(crate) struct BinaryHeap<TPriority>
@@ -44,70 +74,61 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         self.data.reserve(additional);
     }
 
-    /// Puts key and priority in queue, returns its final position
+    /// Puts outer index and priority in queue
+    /// outer_pos is assumed to be unique but not validated
+    /// because validation too expensive
     /// Calls change_handler for every move of old values
     #[inline(always)]
-    pub(crate) fn push<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
+    pub(crate) fn push<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
-        key: RemapIndex,
+        outer_pos: MediatorIndex,
         priority: TPriority,
         change_handler: TChangeHandler,
     ) {
-        self.data.push(HeapEntry { key, priority });
+        self.data.push(HeapEntry {
+            outer_pos,
+            priority,
+        });
         self.heapify_up(HeapIndex(self.data.len() - 1), change_handler);
-    }
-
-    /// Removes item with the biggest priority
-    /// Time complexity - O(log n) swaps and change_handler calls
-    #[inline(always)]
-    pub(crate) fn pop<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
-        &mut self,
-        change_handler: TChangeHandler,
-    ) -> Option<(RemapIndex, TPriority)> {
-        self.remove(HeapIndex(0), change_handler)
-    }
-
-    #[inline(always)]
-    pub(crate) fn peek(&self) -> Option<(RemapIndex, &TPriority)> {
-        self.look_into(HeapIndex(0))
     }
 
     /// Removes item at position and returns it
     /// Time complexity - O(log n) swaps and change_handler calls
-    pub(crate) fn remove<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
+    pub(crate) fn remove<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
         change_handler: TChangeHandler,
-    ) -> Option<(RemapIndex, TPriority)> {
-        if self.len() <= position {
+    ) -> Option<(MediatorIndex, TPriority)> {
+        if position >= self.len() {
             return None;
         }
-        if position == HeapIndex(self.data.len() - 1) {
+        if position.plus1() == self.len() {
             let result = self.data.pop().unwrap();
-            return Some((result.key, result.priority));
+            return Some(result.conv_pair());
         }
-        self.swap_items(position.0, self.data.len() - 1);
-        let result = self.data.pop().unwrap();
+
+        let result = self.data.swap_remove(position.0);
         self.heapify_down(position, change_handler);
-        Some((result.key, result.priority))
+        Some(result.conv_pair())
     }
 
     #[inline(always)]
-    pub(crate) fn look_into(&self, position: HeapIndex) -> Option<(RemapIndex, &TPriority)> {
-        let entry = self.data.get(position.0)?;
-        Some((entry.key, &entry.priority))
+    pub(crate) fn look_into(&self, position: HeapIndex) -> Option<(MediatorIndex, &TPriority)> {
+        self.data.get(position.0).map(HeapEntry::to_pair_ref)
     }
 
     /// Changes priority of queue item
-    pub(crate) fn change_priority<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
+    /// Returns old priority
+    pub(crate) fn change_priority<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
         updated: TPriority,
         change_handler: TChangeHandler,
-    ) {
-        if position >= self.len() {
-            panic!("Out of index during changing priority");
-        }
+    ) -> TPriority {
+        debug_assert!(
+            position < self.len(),
+            "Out of index during changing priority"
+        );
 
         let old = std::mem::replace(&mut self.data[position.0].priority, updated);
         match old.cmp(&self.data[position.0].priority) {
@@ -119,22 +140,35 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
                 self.heapify_down(position, change_handler);
             }
         }
+        old
     }
 
-    // Changes key of element and return old key
-    pub(crate) fn change_key(&mut self, key: RemapIndex, position: HeapIndex) -> RemapIndex {
-        if position >= self.len() {
-            panic!("Out of index during changing key");
-        }
+    // Changes outer index for element and return old index
+    pub(crate) fn change_outer_pos(
+        &mut self,
+        outer_pos: MediatorIndex,
+        position: HeapIndex,
+    ) -> MediatorIndex {
+        debug_assert!(position < self.len(), "Out of index during changing key");
 
-        let old_key = self.data[position.0].key;
-        self.data[position.0].key = key;
-        old_key
+        let old_pos = self.data[position.0].outer_pos;
+        self.data[position.0].outer_pos = outer_pos;
+        old_pos
+    }
+
+    #[inline(always)]
+    pub(crate) fn most_prioritized_idx(&self) -> Option<(MediatorIndex, HeapIndex)> {
+        self.data.get(0).map(|x| (x.outer_pos, HeapIndex(0)))
     }
 
     #[inline(always)]
     pub(crate) fn len(&self) -> HeapIndex {
         HeapIndex(self.data.len())
+    }
+
+    #[inline(always)]
+    pub(crate) fn usize_len(&self) -> usize {
+        self.data.len()
     }
 
     #[inline(always)]
@@ -147,33 +181,84 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         self.data.clear()
     }
 
-    fn heapify_up<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
-        &mut self,
-        position: HeapIndex,
-        mut change_handler: TChangeHandler,
-    ) {
-        debug_assert!(position.0 < self.data.len(), "Out of index in heapify_up");
-        let mut position = position.0;
-        while position > 0 {
-            let parent_pos = (position - 1) / 2;
-            if self.data[parent_pos].priority < self.data[position].priority {
-                self.swap_items(parent_pos, position);
-                change_handler(self.data[position].key, HeapIndex(position));
-                position = parent_pos;
-            } else {
-                break;
-            }
+    pub(crate) fn iter(&self) -> BinaryHeapIterator<TPriority> {
+        BinaryHeapIterator {
+            inner: self.data.iter(),
         }
-        change_handler(self.data[position].key, HeapIndex(position));
     }
 
-    fn heapify_down<TChangeHandler: std::ops::FnMut(RemapIndex, HeapIndex)>(
+    pub(crate) fn produce_from_iter_hash<TKey, TIter>(
+        iter: TIter,
+    ) -> (Self, indexmap::IndexMap<TKey, HeapIndex>)
+    where
+        TKey: std::hash::Hash + Eq,
+        TIter: IntoIterator<Item = (TKey, TPriority)>,
+    {
+        use indexmap::map::{Entry, IndexMap};
+
+        let iter = iter.into_iter();
+        let (min_size, _) = iter.size_hint();
+
+        let mut heap_base: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
+        let mut map: IndexMap<TKey, HeapIndex> = IndexMap::with_capacity(min_size);
+
+        for (key, priority) in iter {
+            match map.entry(key) {
+                Entry::Vacant(entry) => {
+                    let outer_pos = MediatorIndex(entry.index());
+                    entry.insert(HeapIndex(heap_base.len()));
+                    heap_base.push(HeapEntry {
+                        outer_pos,
+                        priority,
+                    });
+                }
+                Entry::Occupied(entry) => {
+                    let HeapIndex(heap_pos) = *entry.get();
+                    heap_base[heap_pos].priority = priority;
+                }
+            }
+        }
+
+        let heapify_start = std::cmp::min(heap_base.len() / 2 + 2, heap_base.len());
+        let mut heap = BinaryHeap { data: heap_base };
+        for pos in (0..heapify_start).rev().map(HeapIndex) {
+            heap.heapify_down(pos, |_, _| {});
+        }
+
+        for (i, MediatorIndex(pos)) in heap.data.iter().map(HeapEntry::to_outer).enumerate() {
+            let (_, heap_idx) = map.get_index_mut(pos).unwrap();
+            *heap_idx = HeapIndex(i);
+        }
+
+        (heap, map)
+    }
+
+    fn heapify_up<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
         mut change_handler: TChangeHandler,
     ) {
-        debug_assert!(position.0 < self.data.len(), "Out of index in heapify_down");
-        let mut position = position.0;
+        debug_assert!(position < self.len(), "Out of index in heapify_up");
+        let HeapIndex(mut position) = position;
+        while position > 0 {
+            let parent_pos = (position - 1) / 2;
+            if self.data[parent_pos].priority >= self.data[position].priority {
+                break;
+            }
+            self.data.swap(parent_pos, position);
+            change_handler(self.data[position].outer_pos, HeapIndex(position));
+            position = parent_pos;
+        }
+        change_handler(self.data[position].outer_pos, HeapIndex(position));
+    }
+
+    fn heapify_down<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
+        &mut self,
+        position: HeapIndex,
+        mut change_handler: TChangeHandler,
+    ) {
+        debug_assert!(position < self.len(), "Out of index in heapify_down");
+        let HeapIndex(mut position) = position;
         loop {
             let max_child_idx = {
                 let child1 = position * 2 + 1;
@@ -181,31 +266,53 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
                 if child1 >= self.data.len() {
                     break;
                 }
-                if child2 >= self.data.len()
-                    || self.data[child2].priority < self.data[child1].priority
+                if child2 < self.data.len()
+                    && self.data[child1].priority <= self.data[child2].priority
                 {
-                    child1
-                } else {
                     child2
+                } else {
+                    child1
                 }
             };
 
-            if self.data[position].priority < self.data[max_child_idx].priority {
-                self.swap_items(position, max_child_idx);
-                change_handler(self.data[position].key, HeapIndex(position));
-                position = max_child_idx;
-            } else {
+            if self.data[position].priority >= self.data[max_child_idx].priority {
                 break;
             }
+            self.data.swap(position, max_child_idx);
+            change_handler(self.data[position].outer_pos, HeapIndex(position));
+            position = max_child_idx;
         }
-        change_handler(self.data[position].key, HeapIndex(position));
+        change_handler(self.data[position].outer_pos, HeapIndex(position));
+    }
+}
+
+/// Useful to create iterator for outer struct
+/// Does NOT guarantee any particular order
+pub(crate) struct BinaryHeapIterator<'a, TPriority> {
+    inner: std::slice::Iter<'a, HeapEntry<TPriority>>,
+}
+
+impl<'a, TPriority> Iterator for BinaryHeapIterator<'a, TPriority> {
+    type Item = (MediatorIndex, &'a TPriority);
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner
+            .next()
+            .map(|entry: &'a HeapEntry<TPriority>| (entry.outer_pos, &entry.priority))
     }
 
     #[inline(always)]
-    fn swap_items(&mut self, pos1: usize, pos2: usize) {
-        debug_assert!(pos1 < self.data.len(), "Out of index in first pos in swap");
-        debug_assert!(pos2 < self.data.len(), "Out of index in second pos in swap");
-        self.data.swap(pos1, pos2);
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+
+    #[inline(always)]
+    fn count(self) -> usize
+    where
+        Self: Sized,
+    {
+        self.inner.count()
     }
 }
 
@@ -214,7 +321,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
 impl<TPriority: Clone> Clone for HeapEntry<TPriority> {
     fn clone(&self) -> Self {
         Self {
-            key: self.key,
+            outer_pos: self.outer_pos,
             priority: self.priority.clone(),
         }
     }
@@ -226,60 +333,9 @@ impl<TPriority: Debug> Debug for HeapEntry<TPriority> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
             f,
-            "{{key: {:?}, priority: {:?}}}",
-            &self.key, &self.priority
+            "{{outer: {:?}, priority: {:?}}}",
+            &self.outer_pos, &self.priority
         )
-    }
-}
-
-pub(crate) mod for_iteration_construction {
-    use super::{BinaryHeap, HeapEntry, HeapIndex};
-    use crate::internal_remapping::RemapIndex;
-
-    #[inline(always)]
-    pub(crate) fn make_heap_entry<TPriority>(
-        remap_idx: RemapIndex,
-        priority: TPriority,
-    ) -> HeapEntry<TPriority> {
-        HeapEntry {
-            key: remap_idx,
-            priority,
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn set_entry_priority<TPriority>(
-        entry: &mut HeapEntry<TPriority>,
-        new_priority: TPriority,
-    ) {
-        entry.priority = new_priority;
-    }
-
-    #[inline(always)]
-    pub(crate) fn make_heap_index(index: usize) -> HeapIndex {
-        HeapIndex(index)
-    }
-
-    pub(crate) fn create_heap<TPriority: Ord>(
-        vec: Vec<HeapEntry<TPriority>>,
-    ) -> BinaryHeap<TPriority> {
-        let heapify_start = std::cmp::min(vec.len() / 2 + 2, vec.len());
-        let mut res = BinaryHeap { data: vec };
-        for pos in (0..heapify_start).rev().map(HeapIndex) {
-            res.heapify_down(pos, |_, _| {});
-        }
-        res
-    }
-
-    #[inline(always)]
-    pub(crate) fn reader_iterator<TP: Ord>(
-        heap: &BinaryHeap<TP>,
-    ) -> impl Iterator<Item = (HeapIndex, &RemapIndex)> {
-        heap.data
-            .iter()
-            .map(|x| &x.key)
-            .enumerate()
-            .map(|(i, r)| (HeapIndex(i), r))
     }
 }
 
@@ -321,12 +377,12 @@ mod tests {
         ];
         let mut maximum = std::i32::MIN;
         let mut heap = BinaryHeap::<i32>::new();
-        assert!(heap.peek().is_none());
+        assert!(heap.look_into(HeapIndex(0)).is_none());
         assert!(is_valid_heap(&heap), "Heap state is invalid");
         for (key, x) in items
             .iter()
             .enumerate()
-            .map(|(i, &x)| (RemapIndex::new(i), x))
+            .map(|(i, &x)| (MediatorIndex(i), x))
         {
             if x > maximum {
                 maximum = x;
@@ -337,8 +393,8 @@ mod tests {
                 "Heap state is invalid after pushing {}",
                 x
             );
-            assert!(heap.peek().is_some());
-            let (_, &heap_max) = heap.peek().unwrap();
+            assert!(heap.look_into(HeapIndex(0)).is_some());
+            let (_, &heap_max) = heap.look_into(HeapIndex(0)).unwrap();
             assert_eq!(maximum, heap_max)
         }
     }
@@ -349,67 +405,54 @@ mod tests {
             2, 3, 21, 22, 25, 29, 36, 90, 89, 88, 87, 83, 48, 50, 52, 69, 65, 55, 73, 75, 76, -53,
             78, 81, -45, -41, 91, -34, -33, -31, -27, -22, -19, -8, -5, -3,
         ];
-        let mut last_positions = HashMap::<RemapIndex, HeapIndex>::new();
+        let mut last_positions = HashMap::<MediatorIndex, HeapIndex>::new();
         let mut heap = BinaryHeap::<i32>::new();
-        let heap_ptr: *const BinaryHeap<i32> = &heap;
-        let mut on_pos_change = |key: RemapIndex, position: HeapIndex| {
-            // Hack to avoid borrow checker
-            let heap_local = unsafe { &*heap_ptr };
-            assert_eq!(heap_local.look_into(position).unwrap().0, key);
-            assert_eq!(
-                &items[key.as_usize()],
-                heap_local.look_into(position).unwrap().1
-            );
-            last_positions.insert(key, position);
+        let mut on_pos_change = |outer_pos: MediatorIndex, position: HeapIndex| {
+            last_positions.insert(outer_pos, position);
         };
         for (i, &x) in items.iter().enumerate() {
-            heap.push(RemapIndex::new(i), x, &mut on_pos_change);
+            heap.push(MediatorIndex(i), x, &mut on_pos_change);
         }
+        assert_eq!(heap.usize_len(), last_positions.len());
         for i in 0..items.len() {
-            let rem_idx = RemapIndex::new(i);
+            let rem_idx = MediatorIndex(i);
             assert!(
                 last_positions.contains_key(&rem_idx),
                 "Not for all items change_handler called"
             );
             let position = last_positions[&rem_idx];
             assert_eq!(
-                items[(heap.look_into(position).unwrap().0).as_usize()],
+                items[(heap.look_into(position).unwrap().0).0],
                 *heap.look_into(position).unwrap().1
             );
             assert_eq!(heap.look_into(position).unwrap().0, rem_idx);
         }
 
-        let mut removed = HashSet::<RemapIndex>::new();
+        let mut removed = HashSet::<MediatorIndex>::new();
         loop {
-            let mut on_pos_change = |key: RemapIndex, position: HeapIndex| {
-                // Hack to avoid borrow checker
-                let heap_local = unsafe { &*heap_ptr };
-                assert_eq!(heap_local.look_into(position).unwrap().0, key);
-                assert_eq!(
-                    items[key.as_usize()],
-                    *heap_local.look_into(position).unwrap().1
-                );
+            let mut on_pos_change = |key: MediatorIndex, position: HeapIndex| {
                 last_positions.insert(key, position);
             };
-            let popped = heap.pop(&mut on_pos_change);
+            let popped = heap.remove(HeapIndex(0), &mut on_pos_change);
             if popped.is_none() {
                 break;
             }
             let (key, _) = popped.unwrap();
             last_positions.remove(&key);
             removed.insert(key);
+            assert_eq!(heap.usize_len(), last_positions.len());
             for i in (0..items.len())
                 .into_iter()
-                .filter(|i| !removed.contains(&RemapIndex::new(*i)))
+                .filter(|i| !removed.contains(&MediatorIndex(*i)))
             {
-                let rem_idx = RemapIndex::new(i);
+                let rem_idx = MediatorIndex(i);
                 assert!(
                     last_positions.contains_key(&rem_idx),
                     "Not for all items change_handler called"
                 );
                 let position = last_positions[&rem_idx];
                 assert_eq!(
-                    items[(heap.look_into(position).unwrap().0).as_usize()],
+                    items[(heap.look_into(position).unwrap().0).0],
                     *heap.look_into(position).unwrap().1
                 );
                 assert_eq!(heap.look_into(position).unwrap().0, rem_idx);
@@ -434,32 +477,32 @@ mod tests {
 
         let mut heap = BinaryHeap::<i32>::new();
         for (i, &x) in items.iter().enumerate() {
-            heap.push(RemapIndex::new(i), x, |_, _| {});
+            heap.push(MediatorIndex(i), x, |_, _| {});
         }
         assert!(is_valid_heap(&heap), "Heap is invalid before pops");
 
         let mut sorted_items = items;
         sorted_items.sort_unstable_by_key(|&x| Reverse(x));
         for &x in sorted_items.iter() {
-            let pop_res = heap.pop(|_, _| {});
+            let pop_res = heap.remove(HeapIndex(0), |_, _| {});
             assert!(pop_res.is_some());
             let (rem_idx, val) = pop_res.unwrap();
             assert_eq!(val, x);
-            assert_eq!(items[rem_idx.as_usize()], val);
+            assert_eq!(items[rem_idx.0], val);
             assert!(is_valid_heap(&heap), "Heap is invalid after {}", x);
         }
 
-        assert_eq!(heap.pop(|_, _| {}), None);
+        assert_eq!(heap.remove(HeapIndex(0), |_, _| {}), None);
     }
 
     #[test]
     fn test_change_priority() {
         let pairs = [
-            (RemapIndex::new(0), 0),
-            (RemapIndex::new(1), 1),
-            (RemapIndex::new(2), 2),
-            (RemapIndex::new(3), 3),
-            (RemapIndex::new(4), 4),
+            (MediatorIndex(0), 0),
+            (MediatorIndex(1), 1),
+            (MediatorIndex(2), 2),
+            (MediatorIndex(3), 3),
+            (MediatorIndex(4), 4),
         ];
 
         let mut heap = BinaryHeap::new();
@@ -474,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn create_heap_test() {
+    fn create_heap_hash_test() {
         let priorities = [
             16i32, 16, 5, 20, 10, 12, 10, 8, 12, 2, 20, -1, -18, 5, -16, 1, 7, 3, 17, -20, -4, 3,
             -7, -5, -8, 19, -19, -16, 3, 4, 17, 13, 3, 11, -9, 0, -10, -2, 16, 19, -12, -4, 19, 7,
@@ -485,19 +528,14 @@ mod tests {
             -11, -10, -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20,
             -18, -8, 7,
         ];
-        let combined_vec: Vec<HeapEntry<i32>> = priorities
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(i, priority)| HeapEntry {
-                key: RemapIndex::new(i),
-                priority,
-            })
-            .collect();
-        let heap = for_iteration_construction::create_heap(combined_vec);
+        let (heap, key_to_pos) =
+            BinaryHeap::produce_from_iter_hash(priorities.iter().cloned().map(|x| (x, x)));
         assert!(is_valid_heap(&heap), "Must be valid heap");
-        for v in heap.data {
-            assert_eq!(priorities[v.key.as_usize()], v.priority);
+        for (map_idx, (key, &heap_idx)) in key_to_pos.iter().enumerate() {
+            assert_eq!(
+                Some((MediatorIndex(map_idx), key)),
+                heap.look_into(heap_idx)
+            );
         }
     }
 
@@ -505,28 +543,25 @@ mod tests {
     fn test_clear() {
         let mut heap = BinaryHeap::new();
         for x in 0..5 {
-            heap.push(RemapIndex::new(x), x, |_, _| {});
+            heap.push(MediatorIndex(x), x, |_, _| {});
         }
         assert!(!heap.is_empty(), "Heap must be non empty");
         heap.data.clear();
         assert!(heap.is_empty(), "Heap must be empty");
-        assert_eq!(heap.pop(|_, _| {}), None);
+        assert_eq!(heap.remove(HeapIndex(0), |_, _| {}), None);
     }
 
     #[test]
-    fn test_change_key() {
+    fn test_change_change_outer_pos() {
         let mut heap = BinaryHeap::new();
         for x in 0..5 {
-            heap.push(RemapIndex::new(x), x, |_, _| {});
+            heap.push(MediatorIndex(x), x, |_, _| {});
         }
-        assert_eq!(heap.look_into(HeapIndex(0)), Some((RemapIndex::new(4), &4)));
+        assert_eq!(heap.look_into(HeapIndex(0)), Some((MediatorIndex(4), &4)));
         assert_eq!(
-            heap.change_key(RemapIndex::new(10), HeapIndex(0)),
-            RemapIndex::new(4)
+            heap.change_outer_pos(MediatorIndex(10), HeapIndex(0)),
+            MediatorIndex(4)
         );
-        assert_eq!(
-            heap.look_into(HeapIndex(0)),
-            Some((RemapIndex::new(10), &4))
-        );
+        assert_eq!(heap.look_into(HeapIndex(0)), Some((MediatorIndex(10), &4)));
     }
 }

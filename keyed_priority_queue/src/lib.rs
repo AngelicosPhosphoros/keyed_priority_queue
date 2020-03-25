@@ -28,7 +28,7 @@
 //! [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
 //!
 //! ```
-//! use keyed_priority_queue::KeyedPriorityQueue;
+//! use keyed_priority_queue::{KeyedPriorityQueue, Entry};
 //! use std::cmp::Reverse;
 //! use std::collections::HashSet;
 //! use std::ops::Index;
@@ -113,14 +113,15 @@
 //!                 let real = field[next] + current_cost.real;
 //!                 let total = current_cost.real + calc_heuristic(next);
 //!                 let cost = Cost { total, real };
-//!                 match available.get_priority(&next) {
-//!                     None => {
+//!                 // Entire this interaction will make only one hash lookup
+//!                 match available.entry(next) {
+//!                     Entry::Vacant(entry) => {
 //!                         // Add new position to queue
-//!                         available.push(next, Reverse(cost));
+//!                         entry.set_priority(Reverse(cost));
 //!                     }
-//!                     Some(&Reverse(old_cost)) if old_cost > cost => {
+//!                     Entry::Occupied(entry) if *entry.get_priority() < Reverse(cost) => {
 //!                         // Have found better path to node in queue
-//!                         available.set_priority(&next, Reverse(cost));
+//!                         entry.set_priority(Reverse(cost));
 //!                     }
 //!                     _ => { /* Have found worse path. */ }
 //!                 };
@@ -146,8 +147,11 @@
 //! ```
 //!
 
+#[forbid(unsafe_code)]
 mod editable_binary_heap;
-mod internal_remapping;
 mod keyed_priority_queue;
 
-pub use crate::keyed_priority_queue::{KeyedPriorityQueue, KeyedPriorityQueueIterator};
+pub use crate::keyed_priority_queue::{
+    Entry, KeyedPriorityQueue, KeyedPriorityQueueBorrowIter, KeyedPriorityQueueIterator,
+    OccupiedEntry, SetPriorityNotFoundError, VacantEntry,
+};

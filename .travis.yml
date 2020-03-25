@@ -8,28 +8,35 @@ jobs:
       script: cargo fmt --verbose -- --check
     # build
     - rust: stable
-      install: cd keyed_priority_queue
-      script: cargo build --release
+      script:
+        - cd keyed_priority_queue
+        - cargo build --release
     - rust: beta
-      install: cd keyed_priority_queue
-      script: cargo build --release
+      script:
+        - cd keyed_priority_queue
+        - cargo build --release
     - rust: nightly
-      install: cd keyed_priority_queue
-      script: cargo build --release
-    - rust: stable
+      script:
+        - cd keyed_priority_queue
+        - cargo build --release
     # tests
-      install: cd keyed_priority_queue
-      script: cargo test --verbose
+    - rust: stable
+      script:
+        - cd keyed_priority_queue
+        - cargo test --verbose
     - rust: beta
-      install: cd keyed_priority_queue
-      script: cargo test --verbose
+      script:
+        - cd keyed_priority_queue
+        - cargo test --verbose
     - rust: nightly
-      install: cd keyed_priority_queue
-      script: cargo test --verbose
+      script:
+        - cd keyed_priority_queue
+        - cargo test --verbose
     # Validate readyness to publish
     - rust: stable
-      install: cd keyed_priority_queue
-      script: cargo publish --dry-run
+      script: 
+        - cd keyed_priority_queue
+        - cargo publish --dry-run
 
   allow_failures:
     - rust: nightly
