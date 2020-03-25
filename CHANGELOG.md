@@ -1,6 +1,9 @@
 # Change Log
 
-## 0.2.0
+## 2020-03-25: 0.2.1
+Fixed typo in Readme.md
+
+## 2020-03-25: 0.2.0
 ## Changes
 ### API
 - Trait `Clone` is no more required for keys (Since it stored only once)
