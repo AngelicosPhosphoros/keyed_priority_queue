@@ -3,12 +3,15 @@
 ## 0.2.0
 ## Changes
 ### API
-- Trait `Clone` is no more required for keys
+- Trait `Clone` is no more required for keys (Since it stored only once)
 - Renamed method `remove_item` to `remove`
 - Added method `remove_entry` which returns both key and priority
-- `push` operation returns old priority if had removed key now
-- Method `set_priority` returns `Result<(TPriority, ())>` with old priority instead of panicing on missing keys
+- `push` operation returns old priority now if same key already exists
+- Method `set_priority` returns `Result<TPriority, SetPriorityNotFoundError>` with old priority instead of panicing on missing keys
 - Added Entry API to allow whole cycle `Find -> Read -> Update` with just one hashmap lookup.
+- Added borrowing unordered iterator (by method `iter`) over which will iterate over whole queue in O(n)
+- Improved documentation by a little
+- Added `#[forbid(unsafe_code)]`
 ### Implementation
 - Now uses IndexMap from [indexmap](https://crates.io/crates/indexmap) crate internally
 

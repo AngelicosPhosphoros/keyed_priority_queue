@@ -289,7 +289,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     ///
     /// ### Time complexity
     ///
-    /// ***O(1)*** in average (limited by HashMap key lookup).
+    /// ***O(1)*** in average (limited by hash map key lookup).
     pub fn get_priority<Q>(&self, key: &Q) -> Option<&TPriority>
     where
         TKey: Borrow<Q>,
@@ -299,8 +299,8 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         Some(self.heap.look_into(heap_idx).unwrap().1)
     }
 
-    /// Set new priority by key and reorder the queue.
-    /// Returns old priority if succeeds.
+    /// Set new priority for existing key and reorder the queue.
+    /// Returns old priority if succeeds or [`SetPriorityNotFoundError`].
     ///
     /// ### Examples
     ///
@@ -318,6 +318,8 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ### Time complexity
     ///
     /// In best case ***O(1)***, in average costs ***O(log n)***.
+    ///
+    /// [`SetPriorityNotFoundError`]: struct.SetPriorityNotFoundError.html
     #[inline]
     pub fn set_priority<Q>(
         &mut self,
@@ -471,7 +473,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     ///
     /// ### Time complexity
     ///
-    /// Iterating over whole queue is O(n)
+    /// Iterating over whole queue is ***O(n)***
     pub fn iter(&self) -> KeyedPriorityQueueBorrowIter<TKey, TPriority> {
         KeyedPriorityQueueBorrowIter {
             key_to_pos: &self.key_to_pos,
@@ -581,10 +583,11 @@ pub enum Entry<'a, TKey: Eq + Hash, TPriority: Ord> {
     Vacant(VacantEntry<'a, TKey, TPriority>),
 }
 
-/// A view into an occupied entry in a `KeyedPriorityQueue`.
+/// A view into an occupied entry in a [`KeyedPriorityQueue`].
 /// It is part of the [`Entry`] enum.
 ///
 /// [`Entry`]: enum.Entry.html
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
 pub struct OccupiedEntry<'a, TKey, TPriority>
 where
     TKey: 'a + Eq + Hash,
@@ -633,10 +636,11 @@ where
     }
 }
 
-/// A view into a vacant entry in a `KeyedPriorityQueue`.
+/// A view into a vacant entry in a [`KeyedPriorityQueue`].
 /// It is part of the [`Entry`] enum.
 ///
 /// [`Entry`]: enum.Entry.html
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
 pub struct VacantEntry<'a, TKey, TPriority>
 where
     TKey: 'a + Eq + Hash,
@@ -793,6 +797,8 @@ impl<TKey: Hash + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, 
 }
 
 /// This is consuming iterator that returns elements in decreasing order
+///
+/// ### Time complexity
 /// Overall complexity of iteration is ***O(n log n)***
 pub struct KeyedPriorityQueueIterator<TKey, TPriority>
 where
@@ -824,6 +830,10 @@ impl<TKey: Hash + Eq, TPriority: Ord> Iterator for KeyedPriorityQueueIterator<TK
     }
 }
 
+/// This is unordered borrowing iterator over queue.
+///
+/// ### Time complexity
+/// Overall complexity of iteration is ***O(n)***
 pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
 where
     TKey: 'a + Hash + Eq,
@@ -864,8 +874,11 @@ impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
     }
 }
 
-/// This is error type for `set_priority` method of `KeyedPriorityQueue`.
+/// This is error type for [`set_priority`] method of [`KeyedPriorityQueue`].
 /// It means that queue doesn't contain such key.
+///
+/// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
+/// [`set_priority`]: struct.KeyedPriorityQueue.html#method.set_priority
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Default)]
 pub struct SetPriorityNotFoundError;
 

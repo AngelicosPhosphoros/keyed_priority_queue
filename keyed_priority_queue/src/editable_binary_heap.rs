@@ -15,7 +15,7 @@ impl HeapIndex {
     pub(crate) const UNINIT: HeapIndex = HeapIndex(std::usize::MAX);
 
     #[inline(always)]
-    fn plus1(self) -> Self {
+    const fn plus1(self) -> Self {
         Self(self.0 + 1)
     }
 }
