@@ -100,7 +100,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
             return None;
         }
         if position.plus1() == self.len() {
-            let result = self.data.pop().unwrap();
+            let result = self.data.pop().expect("At least 1 item");
             return Some(result.conv_pair());
         }
 

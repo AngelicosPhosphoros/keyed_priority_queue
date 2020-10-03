@@ -525,7 +525,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
             .remove(heap_to_rem, |index, heap_idx| {
                 *key_to_pos.get_index_mut(index) = heap_idx
             })
-            .unwrap();
+            .expect("Checked by key_to_pos");
         debug_assert_eq!(position, removed_idx);
 
         let (removed_key, _) = key_to_pos.swap_remove_index(position);
