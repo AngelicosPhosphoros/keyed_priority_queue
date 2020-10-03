@@ -1,7 +1,7 @@
-use indexmap::map::{Entry as MapEntry, IndexMap};
 use std::hash::Hash;
 
-use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex, MediatorIndex};
+use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex};
+use crate::mediator::{Mediator, MediatorEntry, MediatorIndex};
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
 use std::iter::FromIterator;
@@ -118,7 +118,7 @@ where
     TPriority: Ord,
 {
     heap: BinaryHeap<TPriority>,
-    key_to_pos: IndexMap<TKey, HeapIndex>,
+    key_to_pos: Mediator<TKey>,
 }
 
 impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
@@ -136,7 +136,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     pub fn new() -> Self {
         Self {
             heap: BinaryHeap::new(),
-            key_to_pos: IndexMap::new(),
+            key_to_pos: Mediator::new(),
         }
     }
 
@@ -155,7 +155,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             heap: BinaryHeap::with_capacity(capacity),
-            key_to_pos: IndexMap::with_capacity(capacity),
+            key_to_pos: Mediator::with_capacity(capacity),
         }
     }
 
@@ -251,9 +251,12 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     ///
     /// Always ***O(1)***
     pub fn peek(&self) -> Option<(&TKey, &TPriority)> {
-        let (MediatorIndex(first_idx), heap_idx) = self.heap.most_prioritized_idx()?;
-        let (key, _) = self.key_to_pos.get_index(first_idx).unwrap();
-        let (_, priority) = self.heap.look_into(heap_idx).unwrap();
+        let (first_idx, heap_idx) = self.heap.most_prioritized_idx()?;
+        let (key, _) = self.key_to_pos.get_index(first_idx);
+        let (_, priority) = self
+            .heap
+            .look_into(heap_idx)
+            .expect("Checked using key_to_pos");
         Some((key, priority))
     }
 
@@ -263,13 +266,13 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// Amortized ***O(1)***, uses only one hash lookup
     pub fn entry(&mut self, key: TKey) -> Entry<TKey, TPriority> {
         match self.key_to_pos.entry(key) {
-            MapEntry::Vacant(map_entry) => {
-                let index = MediatorIndex(map_entry.index());
+            MediatorEntry::Vacant(map_entry) => {
+                let index = map_entry.index();
                 map_entry.insert(HeapIndex::UNINIT);
                 Entry::Vacant(VacantEntry { index, queue: self })
             }
-            MapEntry::Occupied(map_entry) => {
-                let index = MediatorIndex(map_entry.index());
+            MediatorEntry::Occupied(map_entry) => {
+                let index = map_entry.index();
                 Entry::Occupied(OccupiedEntry { index, queue: self })
             }
         }
@@ -295,8 +298,13 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let heap_idx = *self.key_to_pos.get(key)?;
-        Some(self.heap.look_into(heap_idx).unwrap().1)
+        let heap_idx = self.key_to_pos.get(key)?;
+        Some(
+            self.heap
+                .look_into(heap_idx)
+                .expect("Must contain if key_to_pos contain")
+                .1,
+        )
     }
 
     /// Set new priority for existing key and reorder the queue.
@@ -335,7 +343,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
             Some((idx, _, _)) => idx,
         };
 
-        Ok(self.set_priority_internal(MediatorIndex(map_pos), priority))
+        Ok(self.set_priority_internal(map_pos, priority))
     }
 
     /// Allow removing item by key.
@@ -397,7 +405,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         Q: Hash + Eq + ?Sized,
     {
         let (index, _, _) = self.key_to_pos.get_full(key)?;
-        Some(self.remove_internal(MediatorIndex(index)))
+        Some(self.remove_internal(index))
     }
 
     /// Get the number of elements in queue.
@@ -484,34 +492,24 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     // MUST be called only from VacantEntry
     #[inline(always)]
     fn remove_empty_entry(&mut self, position: MediatorIndex) {
-        let MediatorIndex(position) = position;
-        debug_assert_eq!(
-            *self.key_to_pos.get_index(position).unwrap().1,
-            HeapIndex::UNINIT
-        );
-        debug_assert_eq!(self.key_to_pos.len(), position + 1);
+        debug_assert_eq!(self.key_to_pos.get_index(position).1, HeapIndex::UNINIT);
+        debug_assert_eq!(self.key_to_pos.len(), position.0 + 1);
         self.key_to_pos.swap_remove_index(position);
     }
 
     // MUST be called only during insertions to the map slot with UNINIT state
     fn insert_priority_to_empty(&mut self, position: MediatorIndex, priority: TPriority) {
-        let MediatorIndex(position) = position;
-        debug_assert_eq!(
-            *self.key_to_pos.get_index(position).unwrap().1,
-            HeapIndex::UNINIT
-        );
+        debug_assert_eq!(self.key_to_pos.get_index(position).1, HeapIndex::UNINIT);
 
         // Borrow checker treats borrowing a field as borrowing whole structure
         // so we need to get references to fields to borrow them individually.
         let key_to_pos = &mut self.key_to_pos;
         let heap = &mut self.heap;
 
-        *key_to_pos.get_index_mut(position).unwrap().1 = heap.len();
-        heap.push(
-            MediatorIndex(position),
-            priority,
-            |MediatorIndex(index), heap_idx| *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx,
-        );
+        *key_to_pos.get_index_mut(position) = heap.len();
+        heap.push(position, priority, |index, heap_idx| {
+            *key_to_pos.get_index_mut(index) = heap_idx
+        });
     }
 
     // Removes entry from by index of map
@@ -521,19 +519,19 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         let key_to_pos = &mut self.key_to_pos;
         let heap = &mut self.heap;
 
-        let MediatorIndex(map_pos) = position;
-        let (_, &heap_to_rem) = key_to_pos.get_index(map_pos).unwrap();
+        let (_, heap_to_rem) = key_to_pos.get_index(position);
 
-        let (MediatorIndex(removed_idx), priority) = heap
-            .remove(heap_to_rem, |MediatorIndex(index), heap_idx| {
-                *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
+        let (removed_idx, priority) = heap
+            .remove(heap_to_rem, |index, heap_idx| {
+                *key_to_pos.get_index_mut(index) = heap_idx
             })
             .unwrap();
-        debug_assert_eq!(map_pos, removed_idx);
+        debug_assert_eq!(position, removed_idx);
 
-        let (removed_key, _) = key_to_pos.swap_remove_index(map_pos).unwrap();
-        if let Some((_, &heap_idx_moved)) = key_to_pos.get_index(removed_idx) {
-            heap.change_outer_pos(MediatorIndex(removed_idx), heap_idx_moved);
+        let (removed_key, _) = key_to_pos.swap_remove_index(position);
+        if MediatorIndex(key_to_pos.len()) != removed_idx {
+            let (_, heap_idx_of_moved) = key_to_pos.get_index(removed_idx);
+            heap.change_outer_pos(removed_idx, heap_idx_of_moved);
         }
 
         (removed_key, priority)
@@ -541,9 +539,11 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
 
     // gets priority by map index
     fn get_priority_index(&self, position: MediatorIndex) -> &TPriority {
-        let MediatorIndex(position) = position;
-        let (_, &heap_idx) = self.key_to_pos.get_index(position).unwrap();
-        let (_, priority) = self.heap.look_into(heap_idx).unwrap();
+        let (_, heap_idx) = self.key_to_pos.get_index(position);
+        let (_, priority) = self
+            .heap
+            .look_into(heap_idx)
+            .expect("Only called for existing positions");
         priority
     }
 
@@ -554,17 +554,15 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         let heap = &mut self.heap;
         let key_to_pos = &mut self.key_to_pos;
 
-        let MediatorIndex(map_pos) = position;
-        let (_, &heap_idx) = key_to_pos.get_index(map_pos).unwrap();
+        let (_, heap_idx) = key_to_pos.get_index(position);
 
-        heap.change_priority(heap_idx, priority, |MediatorIndex(index), heap_idx| {
-            *key_to_pos.get_index_mut(index).unwrap().1 = heap_idx
+        heap.change_priority(heap_idx, priority, |index, heap_idx| {
+            *key_to_pos.get_index_mut(index) = heap_idx
         })
     }
 
     fn get_key_index(&self, position: MediatorIndex) -> &TKey {
-        let MediatorIndex(position) = position;
-        let (key, _) = self.key_to_pos.get_index(position).unwrap();
+        let (key, _) = self.key_to_pos.get_index(position);
         key
     }
 }
@@ -679,8 +677,7 @@ where
     TPriority: 'a + Ord,
 {
     fn drop(&mut self) {
-        let MediatorIndex(pos) = self.index;
-        if HeapIndex::UNINIT == *self.queue.key_to_pos.get_index(pos).unwrap().1 {
+        if HeapIndex::UNINIT == self.queue.key_to_pos.get_index(self.index).1 {
             self.queue.remove_empty_entry(self.index);
         }
     }
@@ -840,7 +837,7 @@ where
     TPriority: 'a,
 {
     heap_iterator: BinaryHeapIterator<'a, TPriority>,
-    key_to_pos: &'a IndexMap<TKey, HeapIndex>,
+    key_to_pos: &'a Mediator<TKey>,
 }
 
 impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
@@ -852,12 +849,10 @@ impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
     fn next(&mut self) -> Option<Self::Item> {
         let heap_iterator = &mut self.heap_iterator;
         let key_to_pos = &self.key_to_pos;
-        heap_iterator
-            .next()
-            .map(|(MediatorIndex(index), priority)| {
-                let (key, _) = key_to_pos.get_index(index).unwrap();
-                (key, priority)
-            })
+        heap_iterator.next().map(|(index, priority)| {
+            let (key, _) = key_to_pos.get_index(index);
+            (key, priority)
+        })
     }
 
     #[inline]

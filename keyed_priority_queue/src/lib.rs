@@ -150,6 +150,7 @@
 #[forbid(unsafe_code)]
 mod editable_binary_heap;
 mod keyed_priority_queue;
+mod mediator;
 
 pub use crate::keyed_priority_queue::{
     Entry, KeyedPriorityQueue, KeyedPriorityQueueBorrowIter, KeyedPriorityQueueIterator,

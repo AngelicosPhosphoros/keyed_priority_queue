@@ -2,6 +2,8 @@ use std::cmp::{Ord, Ordering};
 use std::fmt::Debug;
 use std::vec::Vec;
 
+use crate::mediator::MediatorIndex;
+
 /// Wrapper around usize that can be used only as index of `BinaryHeap`
 /// Mostly needed to statically check that
 /// Heap is not indexed by any other collection index
@@ -19,11 +21,6 @@ impl HeapIndex {
         Self(self.0 + 1)
     }
 }
-
-/// Wrapper around possible outer vec index
-/// Used to avoid using as heap index
-#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
-pub(crate) struct MediatorIndex(pub(crate) usize);
 
 struct HeapEntry<TPriority> {
     outer_pos: MediatorIndex,
@@ -189,31 +186,31 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
 
     pub(crate) fn produce_from_iter_hash<TKey, TIter>(
         iter: TIter,
-    ) -> (Self, indexmap::IndexMap<TKey, HeapIndex>)
+    ) -> (Self, crate::mediator::Mediator<TKey>)
     where
         TKey: std::hash::Hash + Eq,
         TIter: IntoIterator<Item = (TKey, TPriority)>,
     {
-        use indexmap::map::{Entry, IndexMap};
+        use crate::mediator::{Mediator, MediatorEntry};
 
         let iter = iter.into_iter();
         let (min_size, _) = iter.size_hint();
 
         let mut heap_base: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
-        let mut map: IndexMap<TKey, HeapIndex> = IndexMap::with_capacity(min_size);
+        let mut map: Mediator<TKey> = Mediator::with_capacity(min_size);
 
         for (key, priority) in iter {
             match map.entry(key) {
-                Entry::Vacant(entry) => {
-                    let outer_pos = MediatorIndex(entry.index());
+                MediatorEntry::Vacant(entry) => {
+                    let outer_pos = entry.index();
                     entry.insert(HeapIndex(heap_base.len()));
                     heap_base.push(HeapEntry {
                         outer_pos,
                         priority,
                     });
                 }
-                Entry::Occupied(entry) => {
-                    let HeapIndex(heap_pos) = *entry.get();
+                MediatorEntry::Occupied(entry) => {
+                    let HeapIndex(heap_pos) = entry.get();
                     heap_base[heap_pos].priority = priority;
                 }
             }
@@ -225,8 +222,8 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
             heap.heapify_down(pos, |_, _| {});
         }
 
-        for (i, MediatorIndex(pos)) in heap.data.iter().map(HeapEntry::to_outer).enumerate() {
-            let (_, heap_idx) = map.get_index_mut(pos).unwrap();
+        for (i, pos) in heap.data.iter().map(HeapEntry::to_outer).enumerate() {
+            let heap_idx = map.get_index_mut(pos);
             *heap_idx = HeapIndex(i);
         }
 
@@ -531,7 +528,7 @@ mod tests {
         let (heap, key_to_pos) =
             BinaryHeap::produce_from_iter_hash(priorities.iter().cloned().map(|x| (x, x)));
         assert!(is_valid_heap(&heap), "Must be valid heap");
-        for (map_idx, (key, &heap_idx)) in key_to_pos.iter().enumerate() {
+        for (map_idx, (key, heap_idx)) in key_to_pos.iter().enumerate() {
             assert_eq!(
                 Some((MediatorIndex(map_idx), key)),
                 heap.look_into(heap_idx)
