@@ -1,7 +1,8 @@
-use crate::editable_binary_heap::HeapIndex;
 use indexmap::map::{IndexMap, OccupiedEntry as IMOccupiedEntry, VacantEntry as IMVacantEntry};
 use std::borrow::Borrow;
 use std::hash::Hash;
+
+use crate::editable_binary_heap::HeapIndex;
 
 /// Wrapper around possible outer vec index
 /// Used to avoid mux up with heap index
@@ -21,8 +22,17 @@ fn with_copied_heap_index<'a, T>((k, &i): (&'a T, &HeapIndex)) -> (&'a T, HeapIn
     (k, i)
 }
 
-pub(crate) struct VacantEntry<'a, TKey: 'a + Hash + Eq>(IMVacantEntry<'a, TKey, HeapIndex>);
-pub(crate) struct OccupiedEntry<'a, TKey: 'a + Hash + Eq>(IMOccupiedEntry<'a, TKey, HeapIndex>);
+pub(crate) struct VacantEntry<'a, TKey: 'a + Hash + Eq> {
+    internal: IMVacantEntry<'a, TKey, HeapIndex>,
+    // look `insert` definition for this
+    map: *mut Mediator<TKey>,
+}
+pub(crate) struct OccupiedEntry<'a, TKey: 'a + Hash + Eq> {
+    internal: IMOccupiedEntry<'a, TKey, HeapIndex>,
+    // look `insert` definition for this
+    map: *mut Mediator<TKey>,
+}
+
 pub(crate) enum MediatorEntry<'a, TKey: 'a + Hash + Eq> {
     Vacant(VacantEntry<'a, TKey>),
     Occupied(OccupiedEntry<'a, TKey>),
@@ -76,9 +86,29 @@ where
 
     #[inline(always)]
     pub(crate) fn entry(&mut self, key: TKey) -> MediatorEntry<TKey> {
+        // Pointer dereferenced only after internal entry dropped
+        // This unsafe pointer dark magic is required because you cannot handle
+        // enum that keep either Entry or Map inside:
+        // Example: https://play.rust-lang.org/?version=stable&mode=debug&edition=2018&gist=aee5555275572e385350a786127f91ed
+        //
+        // We need to acquire mutable reference to Mediator in KeyedPriorityQueue Entry API implementation to keep consistency
+        // but keeping multiple mutable references in entry disallowed by borrow checker.
+        // We keep IndexMap entry in Mediator entry and pointer to Mediator, and allow use second one only after dropping first.
+        // This references used in 3 places:
+        // 1. keyed_priority_queue::OccupiedEntry::set_priority
+        // 2. keyed_priority_queue::OccupiedEntry::remove
+        // 3. keyed_priority_queue::VacantEntry::set_priority
+        //
+        // Also after stabilisation of `polonius` (https://rust-lang.github.io/polonius/) we would be able
+        // to remove this pointer hack from OccupiedEntry and keep reference to Mediator and index in it instead.
+        let map = self as *mut _;
         match self.map.entry(key) {
-            indexmap::map::Entry::Occupied(v) => MediatorEntry::Occupied(OccupiedEntry(v)),
-            indexmap::map::Entry::Vacant(v) => MediatorEntry::Vacant(VacantEntry(v)),
+            indexmap::map::Entry::Occupied(internal) => {
+                MediatorEntry::Occupied(OccupiedEntry { internal, map })
+            }
+            indexmap::map::Entry::Vacant(internal) => {
+                MediatorEntry::Vacant(VacantEntry { internal, map })
+            }
         }
     }
 
@@ -88,7 +118,7 @@ where
         TKey: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.map.get(key).map(|&x| x)
+        self.map.get(key).copied()
     }
 
     #[inline(always)]
@@ -127,25 +157,52 @@ where
 }
 
 impl<'a, TKey: 'a + Hash + Eq> VacantEntry<'a, TKey> {
+    // Safety: make sure that nobody uses original mutable reference to mediator
+    // when returned pointer are used
+    // And the pointer never available longer than `Mediator` instance which created the VacantEntry
+    // See `Mediator::entry` and KeyedPriorityQueue's `remove` and `set_priority` entry methods.
     #[inline(always)]
-    pub(crate) fn insert(self, value: HeapIndex) {
-        self.0.insert(value);
+    pub(crate) unsafe fn insert(self, value: HeapIndex) -> (&'a mut Mediator<TKey>, MediatorIndex) {
+        let map = self.map;
+        let result_index = MediatorIndex(self.internal.index());
+        {
+            self.internal.insert(value);
+        }
+        let mediator = map.as_mut().expect("Validated in entry method");
+        (mediator, result_index)
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_key(&self) -> &TKey {
+        self.internal.key()
     }
 
     #[inline(always)]
     pub(crate) fn index(&self) -> MediatorIndex {
-        MediatorIndex(self.0.index())
+        MediatorIndex(self.internal.index())
     }
 }
 
 impl<'a, TKey: 'a + Hash + Eq> OccupiedEntry<'a, TKey> {
     #[inline(always)]
-    pub(crate) fn index(&self) -> MediatorIndex {
-        MediatorIndex(self.0.index())
+    pub(crate) fn get_heap_idx(&self) -> HeapIndex {
+        *self.internal.get()
     }
 
     #[inline(always)]
-    pub(crate) fn get(&self) -> HeapIndex {
-        *self.0.get()
+    pub(crate) fn get_key(&self) -> &TKey {
+        self.internal.key()
+    }
+
+    // Safety: make sure that nobody uses original mutable reference to mediator
+    // when returned reference are used
+    // And the pointer never available longer than `Mediator` instance which created the VacantEntry
+    // See `Mediator::entry` and KeyedPriorityQueue's `set_priority` entry method.
+    #[inline(always)]
+    pub(crate) unsafe fn transform_to_map(self) -> &'a mut Mediator<TKey> {
+        let map = self.map;
+        std::mem::drop(self);
+        let mediator = map.as_mut().expect("Validated in entry method");
+        mediator
     }
 }

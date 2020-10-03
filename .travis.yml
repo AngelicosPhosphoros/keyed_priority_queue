@@ -32,6 +32,11 @@ jobs:
       script:
         - cd keyed_priority_queue
         - cargo test --verbose
+    # Unsafe soundness prove
+    - rust: nightly-2020-10-01
+      script:
+        - rustup component add miri
+        - cargo miri test -j16 --verbose --all-features
     # Validate readyness to publish
     - rust: stable
       script: 

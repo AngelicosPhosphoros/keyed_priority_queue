@@ -10,18 +10,6 @@ use crate::mediator::MediatorIndex;
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 pub(crate) struct HeapIndex(usize);
 
-impl HeapIndex {
-    /// This value never can be reached so used as UNINIT
-    /// Even if we can address usize::MAX bytes
-    /// We cannot keep so many entries in heap because each of them contains at least size_of(usize) bytes.
-    pub(crate) const UNINIT: HeapIndex = HeapIndex(std::usize::MAX);
-
-    #[inline(always)]
-    const fn plus1(self) -> Self {
-        Self(self.0 + 1)
-    }
-}
-
 struct HeapEntry<TPriority> {
     outer_pos: MediatorIndex,
     priority: TPriority,
@@ -99,7 +87,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         if position >= self.len() {
             return None;
         }
-        if position.plus1() == self.len() {
+        if position.0 + 1 == self.len().0 {
             let result = self.data.pop().expect("At least 1 item");
             return Some(result.conv_pair());
         }
@@ -203,14 +191,17 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
             match map.entry(key) {
                 MediatorEntry::Vacant(entry) => {
                     let outer_pos = entry.index();
-                    entry.insert(HeapIndex(heap_base.len()));
+                    unsafe {
+                        // Safety: resulting reference never used
+                        entry.insert(HeapIndex(heap_base.len()));
+                    }
                     heap_base.push(HeapEntry {
                         outer_pos,
                         priority,
                     });
                 }
                 MediatorEntry::Occupied(entry) => {
-                    let HeapIndex(heap_pos) = entry.get();
+                    let HeapIndex(heap_pos) = entry.get_heap_idx();
                     heap_base[heap_pos].priority = priority;
                 }
             }

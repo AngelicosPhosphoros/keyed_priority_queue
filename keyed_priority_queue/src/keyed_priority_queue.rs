@@ -1,10 +1,13 @@
-use std::hash::Hash;
-
-use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator, HeapIndex};
-use crate::mediator::{Mediator, MediatorEntry, MediatorIndex};
 use std::borrow::Borrow;
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 use std::iter::FromIterator;
+
+use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator};
+use crate::mediator::{
+    Mediator, MediatorEntry, MediatorIndex, OccupiedEntry as MediatorOccupiedEntry,
+    VacantEntry as MediatorVacantEntry,
+};
 
 /// A priority queue that support lookup by key.
 ///
@@ -265,16 +268,20 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ## Time complexity
     /// Amortized ***O(1)***, uses only one hash lookup
     pub fn entry(&mut self, key: TKey) -> Entry<TKey, TPriority> {
-        match self.key_to_pos.entry(key) {
-            MediatorEntry::Vacant(map_entry) => {
-                let index = map_entry.index();
-                map_entry.insert(HeapIndex::UNINIT);
-                Entry::Vacant(VacantEntry { index, queue: self })
-            }
-            MediatorEntry::Occupied(map_entry) => {
-                let index = map_entry.index();
-                Entry::Occupied(OccupiedEntry { index, queue: self })
-            }
+        // Borrow checker treats borrowing a field as borrowing whole structure
+        // so we need to get references to fields to borrow them individually.
+        let key_to_pos = &mut self.key_to_pos;
+        let heap = &mut self.heap;
+
+        match key_to_pos.entry(key) {
+            MediatorEntry::Vacant(internal_entry) => Entry::Vacant(VacantEntry {
+                internal_entry,
+                heap,
+            }),
+            MediatorEntry::Occupied(internal_entry) => Entry::Occupied(OccupiedEntry {
+                internal_entry,
+                heap,
+            }),
         }
     }
 
@@ -489,29 +496,6 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         }
     }
 
-    // MUST be called only from VacantEntry
-    #[inline(always)]
-    fn remove_empty_entry(&mut self, position: MediatorIndex) {
-        debug_assert_eq!(self.key_to_pos.get_index(position).1, HeapIndex::UNINIT);
-        debug_assert_eq!(self.key_to_pos.len(), position.0 + 1);
-        self.key_to_pos.swap_remove_index(position);
-    }
-
-    // MUST be called only during insertions to the map slot with UNINIT state
-    fn insert_priority_to_empty(&mut self, position: MediatorIndex, priority: TPriority) {
-        debug_assert_eq!(self.key_to_pos.get_index(position).1, HeapIndex::UNINIT);
-
-        // Borrow checker treats borrowing a field as borrowing whole structure
-        // so we need to get references to fields to borrow them individually.
-        let key_to_pos = &mut self.key_to_pos;
-        let heap = &mut self.heap;
-
-        *key_to_pos.get_index_mut(position) = heap.len();
-        heap.push(position, priority, |index, heap_idx| {
-            *key_to_pos.get_index_mut(index) = heap_idx
-        });
-    }
-
     // Removes entry from by index of map
     fn remove_internal(&mut self, position: MediatorIndex) -> (TKey, TPriority) {
         // Borrow checker treats borrowing a field as borrowing whole structure
@@ -537,16 +521,6 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         (removed_key, priority)
     }
 
-    // gets priority by map index
-    fn get_priority_index(&self, position: MediatorIndex) -> &TPriority {
-        let (_, heap_idx) = self.key_to_pos.get_index(position);
-        let (_, priority) = self
-            .heap
-            .look_into(heap_idx)
-            .expect("Only called for existing positions");
-        priority
-    }
-
     // Do O(log n) heap updates and by-index map changes
     fn set_priority_internal(&mut self, position: MediatorIndex, priority: TPriority) -> TPriority {
         // Borrow checker treats borrowing a field as borrowing whole structure
@@ -559,11 +533,6 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
         heap.change_priority(heap_idx, priority, |index, heap_idx| {
             *key_to_pos.get_index_mut(index) = heap_idx
         })
-    }
-
-    fn get_key_index(&self, position: MediatorIndex) -> &TKey {
-        let (key, _) = self.key_to_pos.get_index(position);
-        key
     }
 }
 
@@ -591,8 +560,8 @@ where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
 {
-    index: MediatorIndex,
-    queue: &'a mut KeyedPriorityQueue<TKey, TPriority>,
+    internal_entry: MediatorOccupiedEntry<'a, TKey>,
+    heap: &'a mut BinaryHeap<TPriority>,
 }
 
 impl<'a, TKey, TPriority> OccupiedEntry<'a, TKey, TPriority>
@@ -605,7 +574,8 @@ where
     /// ## Time complexity
     /// ***O(1)*** instant access
     pub fn get_priority(&self) -> &TPriority {
-        self.queue.get_priority_index(self.index)
+        let heap_idx = self.internal_entry.get_heap_idx();
+        self.heap.look_into(heap_idx).expect("Must be in queue").1
     }
 
     /// Changes priority of key and returns old priority
@@ -613,8 +583,19 @@ where
     /// ## Time complexity
     /// Up to ***O(log n)*** operations in worst case
     /// ***O(1)*** in best case
-    pub fn set_priority(self, priority: TPriority) -> TPriority {
-        self.queue.set_priority_internal(self.index, priority)
+    pub fn set_priority(mut self, priority: TPriority) -> TPriority {
+        let heap_idx = self.internal_entry.get_heap_idx();
+
+        let heap = &mut self.heap;
+        let key_to_pos = unsafe {
+            // Safety: reference used only inside the method and never leaked away
+            // This method can be called only when Mediator field alive along with queue itself.
+            self.internal_entry.transform_to_map()
+        };
+
+        heap.change_priority(heap_idx, priority, |index, heap_idx| {
+            *key_to_pos.get_index_mut(index) = heap_idx;
+        })
     }
 
     /// Get the reference to actual key
@@ -622,15 +603,36 @@ where
     /// ## Time complexity
     /// ***O(1)*** instant access
     pub fn get_key(&self) -> &TKey {
-        self.queue.get_key_index(self.index)
+        self.internal_entry.get_key()
     }
 
     /// Remove entry from queue
     ///
     /// ## Time complexity
     /// Up to ***O(log n)*** operations
-    pub fn remove(self) -> (TKey, TPriority) {
-        self.queue.remove_internal(self.index)
+    pub fn remove(mut self) -> (TKey, TPriority) {
+        let heap_idx = self.internal_entry.get_heap_idx();
+        // Look `Mediator` `entry` method
+        let key_to_pos = unsafe {
+            // Safety: reference used only inside the method and never leaked away
+            // This method can be called only when Mediator field alive along with queue itself.
+            self.internal_entry.transform_to_map()
+        };
+        let heap = &mut self.heap;
+
+        let (removed_idx, priority) = heap
+            .remove(heap_idx, |index, heap_idx| {
+                *key_to_pos.get_index_mut(index) = heap_idx
+            })
+            .expect("Checked by key_to_pos");
+
+        let (removed_key, _) = key_to_pos.swap_remove_index(removed_idx);
+        if MediatorIndex(key_to_pos.len()) != removed_idx {
+            let (_, heap_idx_of_moved) = key_to_pos.get_index(removed_idx);
+            heap.change_outer_pos(removed_idx, heap_idx_of_moved);
+        }
+
+        (removed_key, priority)
     }
 }
 
@@ -644,8 +646,8 @@ where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
 {
-    index: MediatorIndex,
-    queue: &'a mut KeyedPriorityQueue<TKey, TPriority>,
+    internal_entry: MediatorVacantEntry<'a, TKey>,
+    heap: &'a mut BinaryHeap<TPriority>,
 }
 
 impl<'a, TKey, TPriority> VacantEntry<'a, TKey, TPriority>
@@ -658,7 +660,16 @@ where
     /// ## Time complexity
     /// Up to ***O(log n)*** operations
     pub fn set_priority(self, priority: TPriority) {
-        self.queue.insert_priority_to_empty(self.index, priority);
+        let heap = self.heap;
+        let internal_entry = self.internal_entry;
+        let (key_to_pos, mediator_index) = unsafe {
+            // Safety: reference used only inside the method and never leaked away
+            // This method can be called only when Mediator field alive along with queue itself.
+            internal_entry.insert(heap.len())
+        };
+        heap.push(mediator_index, priority, |index, val| {
+            *key_to_pos.get_index_mut(index) = val
+        });
     }
 
     /// Get the reference to actual key
@@ -666,20 +677,7 @@ where
     /// ## Time complexity
     /// ***O(1)*** instant access
     pub fn get_key(&self) -> &TKey {
-        self.queue.get_key_index(self.index)
-    }
-}
-
-// We need to remove back empty entry if it wasn't used
-impl<'a, TKey, TPriority> Drop for VacantEntry<'a, TKey, TPriority>
-where
-    TKey: 'a + Eq + Hash,
-    TPriority: 'a + Ord,
-{
-    fn drop(&mut self) {
-        if HeapIndex::UNINIT == self.queue.key_to_pos.get_index(self.index).1 {
-            self.queue.remove_empty_entry(self.index);
-        }
+        self.internal_entry.get_key()
     }
 }
 
