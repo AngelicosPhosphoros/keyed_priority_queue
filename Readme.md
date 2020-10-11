@@ -10,12 +10,14 @@
 A Rust library with priority queue that supports changing of priority item in queue or early removal.
 To change priority you need to use some key.
 
+Minimal supported Rust version: `1.46.0`.
+
 ## Usage
 
 Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
-keyed_priority_queue = "0.2"
+keyed_priority_queue = "0.3"
 ```
 
 The example of code:

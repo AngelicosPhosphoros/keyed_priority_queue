@@ -1,5 +1,13 @@
 # Change Log
 
+## 2020-10-11: 0.3.0
+- Stopped to modify internal map in Entry API until user request it. However, this requires using of `unsafe` code. More details [here](https://github.com/AngelicosPhosphoros/keyed_priority_queue/commit/145e9ceb2d6a31617b5bf4bf282f0f4e66ec7a00)
+- Added [Miri](https://github.com/rust-lang/miri) tests to CI
+- Added minimal rustc supported version: `1.46.0`
+- Removed some unneeded code and fixed some docs
+- Refactored internal code to validate it correctness by type system.
+
+
 ## 2020-03-25: 0.2.1
 Fixed typo in Readme.md
 
