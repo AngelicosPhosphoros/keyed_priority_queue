@@ -3,7 +3,7 @@
 //! It uses HashMap and own implementation of binary heap to achieve this.
 //!
 //! Each entry has associated *key* and *priority*.
-//! Keys must be unique, clonable, and hashable; priorities must implement Ord trait.
+//! Keys must be unique, and hashable; priorities must implement Ord trait.
 //!
 //! Popping returns element with biggest priority.
 //! Pushing adds element to queue.
@@ -147,7 +147,6 @@
 //! ```
 //!
 
-//#[forbid(unsafe_code)]
 mod editable_binary_heap;
 mod keyed_priority_queue;
 mod mediator;

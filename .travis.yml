@@ -32,8 +32,12 @@ jobs:
       script:
         - cd keyed_priority_queue
         - cargo test --verbose
+    # Minimal supported rustc
+    - rust: 1.46.0
+      script:
+        - cargo test --verbose
     # Unsafe soundness prove
-    - rust: nightly-2020-10-01
+    - rust: nightly-2020-10-05
       script:
         - rustup component add miri
         - cargo miri test -j16 --verbose --all-features
