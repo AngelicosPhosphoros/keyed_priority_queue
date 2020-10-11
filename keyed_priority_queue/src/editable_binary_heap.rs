@@ -10,6 +10,7 @@ use crate::mediator::MediatorIndex;
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 pub(crate) struct HeapIndex(usize);
 
+#[derive(Copy, Clone)]
 struct HeapEntry<TPriority> {
     outer_pos: MediatorIndex,
     priority: TPriority,
@@ -34,6 +35,7 @@ impl<TPriority> HeapEntry<TPriority> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct BinaryHeap<TPriority>
 where
     TPriority: Ord,
@@ -166,6 +168,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         self.data.clear()
     }
 
+    #[inline]
     pub(crate) fn iter(&self) -> BinaryHeapIterator<TPriority> {
         BinaryHeapIterator {
             inner: self.data.iter(),
@@ -306,17 +309,6 @@ impl<'a, TPriority> Iterator for BinaryHeapIterator<'a, TPriority> {
 
 // Default implementations
 
-impl<TPriority: Clone> Clone for HeapEntry<TPriority> {
-    fn clone(&self) -> Self {
-        Self {
-            outer_pos: self.outer_pos,
-            priority: self.priority.clone(),
-        }
-    }
-}
-
-impl<TPriority: Copy> Copy for HeapEntry<TPriority> {}
-
 impl<TPriority: Debug> Debug for HeapEntry<TPriority> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(
@@ -327,15 +319,8 @@ impl<TPriority: Debug> Debug for HeapEntry<TPriority> {
     }
 }
 
-impl<TPriority: Clone + Ord> Clone for BinaryHeap<TPriority> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-        }
-    }
-}
-
 impl<TPriority: Debug + Ord> Debug for BinaryHeap<TPriority> {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         self.data.fmt(f)
     }

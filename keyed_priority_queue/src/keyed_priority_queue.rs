@@ -16,8 +16,6 @@ use crate::mediator::{
 /// It is logic error if priority values changes other way than by [`set_priority`] method.
 /// It is logic error if key values changes somehow while in queue.
 /// This changes normally possible only through `Cell`, `RefCell`, global state, IO, or unsafe code.
-/// Keys cloned and kept in queue in two instances.
-/// Priorities have one single instance in queue.
 ///
 /// [`set_priority`]: struct.KeyedPriorityQueue.html#method.set_priority
 ///
@@ -115,6 +113,7 @@ use crate::mediator::{
 ///     assert_eq!(queue.pop(), None);
 /// }
 /// ```
+#[derive(Clone)]
 pub struct KeyedPriorityQueue<TKey, TPriority>
 where
     TKey: Hash + Eq,
@@ -573,6 +572,7 @@ where
     ///
     /// ## Time complexity
     /// ***O(1)*** instant access
+    #[inline]
     pub fn get_priority(&self) -> &TPriority {
         let heap_idx = self.internal_entry.get_heap_idx();
         self.heap.look_into(heap_idx).expect("Must be in queue").1
@@ -583,6 +583,7 @@ where
     /// ## Time complexity
     /// Up to ***O(log n)*** operations in worst case
     /// ***O(1)*** in best case
+    #[inline]
     pub fn set_priority(mut self, priority: TPriority) -> TPriority {
         let heap_idx = self.internal_entry.get_heap_idx();
 
@@ -602,6 +603,7 @@ where
     ///
     /// ## Time complexity
     /// ***O(1)*** instant access
+    #[inline]
     pub fn get_key(&self) -> &TKey {
         self.internal_entry.get_key()
     }
@@ -659,6 +661,7 @@ where
     ///
     /// ## Time complexity
     /// Up to ***O(log n)*** operations
+    #[inline]
     pub fn set_priority(self, priority: TPriority) {
         let heap = self.heap;
         let internal_entry = self.internal_entry;
@@ -676,41 +679,9 @@ where
     ///
     /// ## Time complexity
     /// ***O(1)*** instant access
+    #[inline]
     pub fn get_key(&self) -> &TKey {
         self.internal_entry.get_key()
-    }
-}
-
-impl<TKey: Hash + Clone + Eq, TPriority: Ord + Clone> Clone
-    for KeyedPriorityQueue<TKey, TPriority>
-{
-    /// Allow cloning the queue if keys and priorities are clonable.
-    ///
-    /// ### Examples
-    ///
-    ///
-    /// ```
-    /// use keyed_priority_queue::KeyedPriorityQueue;
-    /// let mut queue: KeyedPriorityQueue<i32, i32> = (0..5).map(|x|(x,x)).collect();
-    /// let mut cloned = queue.clone();
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// assert_eq!(queue.pop(), cloned.pop());
-    /// ```
-    ///
-    /// ### Time complexity
-    ///
-    /// Always ***O(n)***
-    #[must_use = "cloning is often expensive and is not expected to have side effects"]
-    #[inline]
-    fn clone(&self) -> Self {
-        Self {
-            heap: self.heap.clone(),
-            key_to_pos: self.key_to_pos.clone(),
-        }
     }
 }
 
@@ -1166,5 +1137,22 @@ mod tests {
             format!("{:?}", queue),
             "[(\"first\", 5)(\"second\", 4)(\"third\", 3)(\"fourth\", 2)(\"fifth\", 1)]"
         );
+    }
+
+    #[test]
+    fn test_not_clone_works() {
+        use core::hash::Hash;
+        #[derive(Hash, PartialEq, Eq)]
+        struct Key(u32);
+
+        let vals = [0u32, 1, 1, 2, 4, 5];
+        let mut queue: KeyedPriorityQueue<Key, u32> =
+            vals.iter().copied().map(|v| (Key(v), v)).collect();
+        queue.set_priority(&Key(1), 10).unwrap();
+        let mut res = Vec::with_capacity(5);
+        while let Some((Key(k), p)) = queue.pop() {
+            res.push((k, p));
+        }
+        assert_eq!(&res, &[(1, 10), (5, 5), (4, 4), (2, 2), (0, 0)]);
     }
 }
