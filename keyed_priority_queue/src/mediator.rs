@@ -1,6 +1,7 @@
-use indexmap::map::{IndexMap, OccupiedEntry as IMOccupiedEntry, VacantEntry as IMVacantEntry};
 use std::borrow::Borrow;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
+
+use indexmap::map::{IndexMap, OccupiedEntry as IMOccupiedEntry, VacantEntry as IMVacantEntry};
 
 use crate::editable_binary_heap::HeapIndex;
 
@@ -13,8 +14,8 @@ pub(crate) struct MediatorIndex(pub(crate) usize);
 /// This is wrapper over over indexmap that uses `MediatorIndex` as index.
 /// Also it centralized checking for panics
 #[derive(Clone, Debug)]
-pub(crate) struct Mediator<TKey: Hash + Eq> {
-    map: IndexMap<TKey, HeapIndex>,
+pub(crate) struct Mediator<TKey: Hash + Eq, S: BuildHasher> {
+    map: IndexMap<TKey, HeapIndex, S>,
 }
 
 #[inline(always)]
@@ -22,37 +23,30 @@ fn with_copied_heap_index<'a, T>((k, &i): (&'a T, &HeapIndex)) -> (&'a T, HeapIn
     (k, i)
 }
 
-pub(crate) struct VacantEntry<'a, TKey: 'a + Hash + Eq> {
+pub(crate) struct VacantEntry<'a, TKey: 'a + Hash + Eq, S: BuildHasher> {
     internal: IMVacantEntry<'a, TKey, HeapIndex>,
     // look `insert` definition for this
-    map: *mut Mediator<TKey>,
+    map: *mut Mediator<TKey, S>,
 }
-pub(crate) struct OccupiedEntry<'a, TKey: 'a + Hash + Eq> {
+pub(crate) struct OccupiedEntry<'a, TKey: 'a + Hash + Eq, S: BuildHasher> {
     internal: IMOccupiedEntry<'a, TKey, HeapIndex>,
     // look `insert` definition for this
-    map: *mut Mediator<TKey>,
+    map: *mut Mediator<TKey, S>,
 }
 
-pub(crate) enum MediatorEntry<'a, TKey: 'a + Hash + Eq> {
-    Vacant(VacantEntry<'a, TKey>),
-    Occupied(OccupiedEntry<'a, TKey>),
+pub(crate) enum MediatorEntry<'a, TKey: 'a + Hash + Eq, S: BuildHasher> {
+    Vacant(VacantEntry<'a, TKey, S>),
+    Occupied(OccupiedEntry<'a, TKey, S>),
 }
 
-impl<TKey> Mediator<TKey>
+impl<TKey, S> Mediator<TKey, S>
 where
     TKey: Hash + Eq,
+    S: BuildHasher,
 {
-    #[inline(always)]
-    pub(crate) fn new() -> Self {
+    pub(crate) fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
         Self {
-            map: IndexMap::new(),
-        }
-    }
-
-    #[inline(always)]
-    pub(crate) fn with_capacity(capacity: usize) -> Self {
-        Self {
-            map: IndexMap::with_capacity(capacity),
+            map: IndexMap::with_capacity_and_hasher(capacity, hasher),
         }
     }
 
@@ -85,7 +79,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn entry(&mut self, key: TKey) -> MediatorEntry<TKey> {
+    pub(crate) fn entry(&mut self, key: TKey) -> MediatorEntry<TKey, S> {
         // Pointer dereferenced only after internal entry dropped
         // This unsafe pointer dark magic is required because you cannot handle
         // enum that keep either Entry or Map inside:
@@ -156,13 +150,16 @@ where
     }
 }
 
-impl<'a, TKey: 'a + Hash + Eq> VacantEntry<'a, TKey> {
+impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> VacantEntry<'a, TKey, S> {
     // Safety: make sure that nobody uses original mutable reference to mediator
     // when returned pointer are used
     // And the pointer never available longer than `Mediator` instance which created the VacantEntry
     // See `Mediator::entry` and KeyedPriorityQueue's `remove` and `set_priority` entry methods.
     #[inline(always)]
-    pub(crate) unsafe fn insert(self, value: HeapIndex) -> (&'a mut Mediator<TKey>, MediatorIndex) {
+    pub(crate) unsafe fn insert(
+        self,
+        value: HeapIndex,
+    ) -> (&'a mut Mediator<TKey, S>, MediatorIndex) {
         let map = self.map;
         let result_index = MediatorIndex(self.internal.index());
         {
@@ -183,7 +180,7 @@ impl<'a, TKey: 'a + Hash + Eq> VacantEntry<'a, TKey> {
     }
 }
 
-impl<'a, TKey: 'a + Hash + Eq> OccupiedEntry<'a, TKey> {
+impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> OccupiedEntry<'a, TKey, S> {
     #[inline(always)]
     pub(crate) fn get_heap_idx(&self) -> HeapIndex {
         *self.internal.get()
@@ -199,7 +196,7 @@ impl<'a, TKey: 'a + Hash + Eq> OccupiedEntry<'a, TKey> {
     // And the pointer never available longer than `Mediator` instance which created the VacantEntry
     // See `Mediator::entry` and KeyedPriorityQueue's `set_priority` entry method.
     #[inline(always)]
-    pub(crate) unsafe fn transform_to_map(self) -> &'a mut Mediator<TKey> {
+    pub(crate) unsafe fn transform_to_map(self) -> &'a mut Mediator<TKey, S> {
         let map = self.map;
         std::mem::drop(self);
         let mediator = map.as_mut().expect("Validated in entry method");

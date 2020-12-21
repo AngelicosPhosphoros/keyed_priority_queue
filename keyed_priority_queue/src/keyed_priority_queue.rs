@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
+use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Display};
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::iter::FromIterator;
 
 use crate::editable_binary_heap::{BinaryHeap, BinaryHeapIterator};
@@ -16,8 +17,13 @@ use crate::mediator::{
 /// It is logic error if priority values changes other way than by [`set_priority`] method.
 /// It is logic error if key values changes somehow while in queue.
 /// This changes normally possible only through `Cell`, `RefCell`, global state, IO, or unsafe code.
+/// 
+/// If you feel KeyedPriorityQueue slow, it can be because it uses RandomState (relatably slow but strong against HashDoS attack) hasher by default.
+/// You can try [fnv] or [fxhash] crates hashers.
 ///
 /// [`set_priority`]: struct.KeyedPriorityQueue.html#method.set_priority
+/// [fnv]: https://crates.io/crates/fnv
+/// [fxhash]: https://crates.io/crates/fxhash
 ///
 /// # Examples
 ///
@@ -104,26 +110,25 @@ use crate::mediator::{
 ///     }
 /// }
 ///
-/// fn main(){
-///     let mut queue = KeyedPriorityQueue::new();
-///     queue.push(5, OrdFloat(5.0));
-///     queue.push(4, OrdFloat(4.0));
-///     assert_eq!(queue.pop(), Some((5, OrdFloat(5.0))));
-///     assert_eq!(queue.pop(), Some((4, OrdFloat(4.0))));
-///     assert_eq!(queue.pop(), None);
-/// }
+/// let mut queue = KeyedPriorityQueue::new();
+/// queue.push(5, OrdFloat(5.0));
+/// queue.push(4, OrdFloat(4.0));
+/// assert_eq!(queue.pop(), Some((5, OrdFloat(5.0))));
+/// assert_eq!(queue.pop(), Some((4, OrdFloat(4.0))));
+/// assert_eq!(queue.pop(), None);
 /// ```
 #[derive(Clone)]
-pub struct KeyedPriorityQueue<TKey, TPriority>
+pub struct KeyedPriorityQueue<TKey, TPriority, S = RandomState>
 where
     TKey: Hash + Eq,
     TPriority: Ord,
+    S: BuildHasher,
 {
     heap: BinaryHeap<TPriority>,
-    key_to_pos: Mediator<TKey>,
+    key_to_pos: Mediator<TKey, S>,
 }
 
-impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority, RandomState> {
     /// Creates an empty queue
     ///
     /// ### Examples
@@ -136,10 +141,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ```
     #[inline]
     pub fn new() -> Self {
-        Self {
-            heap: BinaryHeap::new(),
-            key_to_pos: Mediator::new(),
-        }
+        Self::with_capacity_and_hasher(0, RandomState::default())
     }
 
     /// Creates an empty queue with allocated memory enough
@@ -155,9 +157,45 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ```
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
+        Self::with_capacity_and_hasher(capacity, RandomState::default())
+    }
+}
+
+impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> KeyedPriorityQueue<TKey, TPriority, S> {
+    /// Creates an empty queue with specific Hasher
+    ///
+    /// ### Examples
+    ///
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use std::collections::hash_map::RandomState;
+    /// let mut queue = KeyedPriorityQueue::with_hasher(RandomState::default());
+    /// queue.push("Key", 4);
+    /// ```
+    #[inline]
+    pub fn with_hasher(hasher: S) -> Self {
+        Self::with_capacity_and_hasher(0, hasher)
+    }
+
+    /// Creates an empty queue with allocated memory enough
+    /// to keep `capacity` elements without reallocation.
+    /// Also useful when Hasher cannot be defaulted.
+    ///
+    /// ### Examples
+    ///
+    ///
+    /// ```
+    /// use keyed_priority_queue::KeyedPriorityQueue;
+    /// use std::collections::hash_map::RandomState;
+    /// let mut queue = KeyedPriorityQueue::with_capacity_and_hasher(10, RandomState::default());
+    /// queue.push("Key", 4);
+    /// ```
+    #[inline]
+    pub fn with_capacity_and_hasher(capacity: usize, hasher: S) -> Self {
         Self {
             heap: BinaryHeap::with_capacity(capacity),
-            key_to_pos: Mediator::with_capacity(capacity),
+            key_to_pos: Mediator::with_capacity_and_hasher(capacity, hasher),
         }
     }
 
@@ -266,7 +304,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     ///
     /// ## Time complexity
     /// Amortized ***O(1)***, uses only one hash lookup
-    pub fn entry(&mut self, key: TKey) -> Entry<TKey, TPriority> {
+    pub fn entry(&mut self, key: TKey) -> Entry<TKey, TPriority, S> {
         // Borrow checker treats borrowing a field as borrowing whole structure
         // so we need to get references to fields to borrow them individually.
         let key_to_pos = &mut self.key_to_pos;
@@ -488,7 +526,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
     /// ### Time complexity
     ///
     /// Iterating over whole queue is ***O(n)***
-    pub fn iter(&self) -> KeyedPriorityQueueBorrowIter<TKey, TPriority> {
+    pub fn iter(&self) -> KeyedPriorityQueueBorrowIter<TKey, TPriority, S> {
         KeyedPriorityQueueBorrowIter {
             key_to_pos: &self.key_to_pos,
             heap_iterator: self.heap.iter(),
@@ -541,12 +579,12 @@ impl<TKey: Hash + Eq, TPriority: Ord> KeyedPriorityQueue<TKey, TPriority> {
 ///
 /// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
 /// [`entry`]: struct.KeyedPriorityQueue.html#method.entry
-pub enum Entry<'a, TKey: Eq + Hash, TPriority: Ord> {
+pub enum Entry<'a, TKey: Eq + Hash, TPriority: Ord, S: BuildHasher> {
     /// An occupied entry.
-    Occupied(OccupiedEntry<'a, TKey, TPriority>),
+    Occupied(OccupiedEntry<'a, TKey, TPriority, S>),
 
     /// A vacant entry.
-    Vacant(VacantEntry<'a, TKey, TPriority>),
+    Vacant(VacantEntry<'a, TKey, TPriority, S>),
 }
 
 /// A view into an occupied entry in a [`KeyedPriorityQueue`].
@@ -554,19 +592,21 @@ pub enum Entry<'a, TKey: Eq + Hash, TPriority: Ord> {
 ///
 /// [`Entry`]: enum.Entry.html
 /// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
-pub struct OccupiedEntry<'a, TKey, TPriority>
+pub struct OccupiedEntry<'a, TKey, TPriority, S = RandomState>
 where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
+    S: BuildHasher,
 {
-    internal_entry: MediatorOccupiedEntry<'a, TKey>,
+    internal_entry: MediatorOccupiedEntry<'a, TKey, S>,
     heap: &'a mut BinaryHeap<TPriority>,
 }
 
-impl<'a, TKey, TPriority> OccupiedEntry<'a, TKey, TPriority>
+impl<'a, TKey, TPriority, S> OccupiedEntry<'a, TKey, TPriority, S>
 where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
+    S: BuildHasher,
 {
     /// Returns reference to the priority associated to entry
     ///
@@ -643,19 +683,21 @@ where
 ///
 /// [`Entry`]: enum.Entry.html
 /// [`KeyedPriorityQueue`]: struct.KeyedPriorityQueue.html
-pub struct VacantEntry<'a, TKey, TPriority>
+pub struct VacantEntry<'a, TKey, TPriority, S = RandomState>
 where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
+    S: BuildHasher,
 {
-    internal_entry: MediatorVacantEntry<'a, TKey>,
+    internal_entry: MediatorVacantEntry<'a, TKey, S>,
     heap: &'a mut BinaryHeap<TPriority>,
 }
 
-impl<'a, TKey, TPriority> VacantEntry<'a, TKey, TPriority>
+impl<'a, TKey, TPriority, S> VacantEntry<'a, TKey, TPriority, S>
 where
     TKey: 'a + Eq + Hash,
     TPriority: 'a + Ord,
+    S: BuildHasher,
 {
     /// Insert priority of key to queue
     ///
@@ -685,8 +727,8 @@ where
     }
 }
 
-impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug> Debug
-    for KeyedPriorityQueue<TKey, TPriority>
+impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug, S: BuildHasher> Debug
+    for KeyedPriorityQueue<TKey, TPriority, S>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "[")?;
@@ -697,15 +739,17 @@ impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug> Debug
     }
 }
 
-impl<TKey: Hash + Eq, TPriority: Ord> Default for KeyedPriorityQueue<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher + Default> Default
+    for KeyedPriorityQueue<TKey, TPriority, S>
+{
     #[inline(always)]
     fn default() -> Self {
-        Self::new()
+        Self::with_capacity_and_hasher(0, S::default())
     }
 }
 
-impl<TKey: Hash + Eq, TPriority: Ord> FromIterator<(TKey, TPriority)>
-    for KeyedPriorityQueue<TKey, TPriority>
+impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher + Default> FromIterator<(TKey, TPriority)>
+    for KeyedPriorityQueue<TKey, TPriority, S>
 {
     /// Allows building queue from iterator using `collect()`.
     /// At result it will be valid queue with unique keys.
@@ -766,15 +810,18 @@ impl<TKey: Hash + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, 
 ///
 /// ### Time complexity
 /// Overall complexity of iteration is ***O(n log n)***
-pub struct KeyedPriorityQueueIterator<TKey, TPriority>
+pub struct KeyedPriorityQueueIterator<TKey, TPriority, S = RandomState>
 where
     TKey: Hash + Eq,
     TPriority: Ord,
+    S: BuildHasher,
 {
-    queue: KeyedPriorityQueue<TKey, TPriority>,
+    queue: KeyedPriorityQueue<TKey, TPriority, S>,
 }
 
-impl<TKey: Hash + Eq, TPriority: Ord> Iterator for KeyedPriorityQueueIterator<TKey, TPriority> {
+impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> Iterator
+    for KeyedPriorityQueueIterator<TKey, TPriority, S>
+{
     type Item = (TKey, TPriority);
 
     #[inline]
@@ -800,17 +847,18 @@ impl<TKey: Hash + Eq, TPriority: Ord> Iterator for KeyedPriorityQueueIterator<TK
 ///
 /// ### Time complexity
 /// Overall complexity of iteration is ***O(n)***
-pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority, S = RandomState>
 where
     TKey: 'a + Hash + Eq,
     TPriority: 'a,
+    S: BuildHasher,
 {
     heap_iterator: BinaryHeapIterator<'a, TPriority>,
-    key_to_pos: &'a Mediator<TKey>,
+    key_to_pos: &'a Mediator<TKey, S>,
 }
 
-impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a> Iterator
-    for KeyedPriorityQueueBorrowIter<'a, TKey, TPriority>
+impl<'a, TKey: 'a + Hash + Eq, TPriority: 'a, S: BuildHasher> Iterator
+    for KeyedPriorityQueueBorrowIter<'a, TKey, TPriority, S>
 {
     type Item = (&'a TKey, &'a TPriority);
 
