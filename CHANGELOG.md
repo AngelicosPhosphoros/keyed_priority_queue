@@ -1,6 +1,6 @@
 # Change Log
 
-## Upcoming
+## 2020-12-21: 0.3.1
 - Added ability to use custom hasher
 
 ## 2020-10-11: 0.3.0

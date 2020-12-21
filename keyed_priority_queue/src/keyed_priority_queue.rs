@@ -17,7 +17,7 @@ use crate::mediator::{
 /// It is logic error if priority values changes other way than by [`set_priority`] method.
 /// It is logic error if key values changes somehow while in queue.
 /// This changes normally possible only through `Cell`, `RefCell`, global state, IO, or unsafe code.
-/// 
+///
 /// If you feel KeyedPriorityQueue slow, it can be because it uses RandomState (relatably slow but strong against HashDoS attack) hasher by default.
 /// You can try [fnv] or [fxhash] crates hashers.
 ///
@@ -411,7 +411,7 @@ impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> KeyedPriorityQueue<TKey, T
     /// ### Time complexity
     ///
     /// On average the function will require ***O(log n)*** operations.
-    #[inline(always)]
+    #[inline]
     pub fn remove<Q>(&mut self, key: &Q) -> Option<TPriority>
     where
         TKey: Borrow<Q>,
@@ -742,7 +742,7 @@ impl<TKey: Hash + Eq + Debug, TPriority: Ord + Debug, S: BuildHasher> Debug
 impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher + Default> Default
     for KeyedPriorityQueue<TKey, TPriority, S>
 {
-    #[inline(always)]
+    #[inline]
     fn default() -> Self {
         Self::with_capacity_and_hasher(0, S::default())
     }

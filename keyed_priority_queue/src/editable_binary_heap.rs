@@ -45,14 +45,14 @@ where
 }
 
 impl<TPriority: Ord> BinaryHeap<TPriority> {
-    #[inline(always)]
+    #[inline]
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn reserve(&mut self, additional: usize) {
         self.data.reserve(additional);
     }
@@ -61,7 +61,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     /// outer_pos is assumed to be unique but not validated
     /// because validation too expensive
     /// Calls change_handler for every move of old values
-    #[inline(always)]
+    #[inline]
     pub(crate) fn push<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         outer_pos: MediatorIndex,
@@ -95,7 +95,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         Some(result.conv_pair())
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn look_into(&self, position: HeapIndex) -> Option<(MediatorIndex, &TPriority)> {
         self.data.get(position.0).map(HeapEntry::to_pair_ref)
     }
@@ -139,27 +139,27 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         old_pos
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn most_prioritized_idx(&self) -> Option<(MediatorIndex, HeapIndex)> {
         self.data.get(0).map(|x| (x.outer_pos, HeapIndex(0)))
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn len(&self) -> HeapIndex {
         HeapIndex(self.data.len())
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn usize_len(&self) -> usize {
         self.data.len()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn clear(&mut self) {
         self.data.clear()
     }
@@ -283,19 +283,19 @@ pub(crate) struct BinaryHeapIterator<'a, TPriority> {
 impl<'a, TPriority> Iterator for BinaryHeapIterator<'a, TPriority> {
     type Item = (MediatorIndex, &'a TPriority);
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
             .map(|entry: &'a HeapEntry<TPriority>| (entry.outer_pos, &entry.priority))
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
 
-    #[inline(always)]
+    #[inline]
     fn count(self) -> usize
     where
         Self: Sized,

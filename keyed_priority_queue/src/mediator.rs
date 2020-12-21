@@ -155,7 +155,7 @@ impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> VacantEntry<'a, TKey, S> {
     // when returned pointer are used
     // And the pointer never available longer than `Mediator` instance which created the VacantEntry
     // See `Mediator::entry` and KeyedPriorityQueue's `remove` and `set_priority` entry methods.
-    #[inline(always)]
+    #[inline]
     pub(crate) unsafe fn insert(
         self,
         value: HeapIndex,
@@ -169,24 +169,24 @@ impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> VacantEntry<'a, TKey, S> {
         (mediator, result_index)
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_key(&self) -> &TKey {
         self.internal.key()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn index(&self) -> MediatorIndex {
         MediatorIndex(self.internal.index())
     }
 }
 
 impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> OccupiedEntry<'a, TKey, S> {
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_heap_idx(&self) -> HeapIndex {
         *self.internal.get()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn get_key(&self) -> &TKey {
         self.internal.key()
     }
@@ -195,7 +195,7 @@ impl<'a, TKey: 'a + Hash + Eq, S: BuildHasher> OccupiedEntry<'a, TKey, S> {
     // when returned reference are used
     // And the pointer never available longer than `Mediator` instance which created the VacantEntry
     // See `Mediator::entry` and KeyedPriorityQueue's `set_priority` entry method.
-    #[inline(always)]
+    #[inline]
     pub(crate) unsafe fn transform_to_map(self) -> &'a mut Mediator<TKey, S> {
         let map = self.map;
         std::mem::drop(self);
