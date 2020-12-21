@@ -1,5 +1,6 @@
 use std::cmp::{Ord, Ordering};
 use std::fmt::Debug;
+use std::hash::BuildHasher;
 use std::vec::Vec;
 
 use crate::mediator::MediatorIndex;
@@ -44,19 +45,14 @@ where
 }
 
 impl<TPriority: Ord> BinaryHeap<TPriority> {
-    #[inline(always)]
-    pub(crate) fn new() -> Self {
-        Self { data: Vec::new() }
-    }
-
-    #[inline(always)]
+    #[inline]
     pub(crate) fn with_capacity(capacity: usize) -> Self {
         Self {
             data: Vec::with_capacity(capacity),
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn reserve(&mut self, additional: usize) {
         self.data.reserve(additional);
     }
@@ -65,7 +61,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     /// outer_pos is assumed to be unique but not validated
     /// because validation too expensive
     /// Calls change_handler for every move of old values
-    #[inline(always)]
+    #[inline]
     pub(crate) fn push<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         outer_pos: MediatorIndex,
@@ -99,7 +95,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         Some(result.conv_pair())
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn look_into(&self, position: HeapIndex) -> Option<(MediatorIndex, &TPriority)> {
         self.data.get(position.0).map(HeapEntry::to_pair_ref)
     }
@@ -143,27 +139,27 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         old_pos
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn most_prioritized_idx(&self) -> Option<(MediatorIndex, HeapIndex)> {
         self.data.get(0).map(|x| (x.outer_pos, HeapIndex(0)))
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn len(&self) -> HeapIndex {
         HeapIndex(self.data.len())
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn usize_len(&self) -> usize {
         self.data.len()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
-    #[inline(always)]
+    #[inline]
     pub(crate) fn clear(&mut self) {
         self.data.clear()
     }
@@ -175,12 +171,13 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         }
     }
 
-    pub(crate) fn produce_from_iter_hash<TKey, TIter>(
+    pub(crate) fn produce_from_iter_hash<TKey, TIter, S>(
         iter: TIter,
-    ) -> (Self, crate::mediator::Mediator<TKey>)
+    ) -> (Self, crate::mediator::Mediator<TKey, S>)
     where
         TKey: std::hash::Hash + Eq,
         TIter: IntoIterator<Item = (TKey, TPriority)>,
+        S: BuildHasher + Default,
     {
         use crate::mediator::{Mediator, MediatorEntry};
 
@@ -188,7 +185,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         let (min_size, _) = iter.size_hint();
 
         let mut heap_base: Vec<HeapEntry<TPriority>> = Vec::with_capacity(min_size);
-        let mut map: Mediator<TKey> = Mediator::with_capacity(min_size);
+        let mut map: Mediator<TKey, S> = Mediator::with_capacity_and_hasher(min_size, S::default());
 
         for (key, priority) in iter {
             match map.entry(key) {
@@ -286,19 +283,19 @@ pub(crate) struct BinaryHeapIterator<'a, TPriority> {
 impl<'a, TPriority> Iterator for BinaryHeapIterator<'a, TPriority> {
     type Item = (MediatorIndex, &'a TPriority);
 
-    #[inline(always)]
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.inner
             .next()
             .map(|entry: &'a HeapEntry<TPriority>| (entry.outer_pos, &entry.priority))
     }
 
-    #[inline(always)]
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
 
-    #[inline(always)]
+    #[inline]
     fn count(self) -> usize
     where
         Self: Sized,
@@ -328,8 +325,11 @@ impl<TPriority: Debug + Ord> Debug for BinaryHeap<TPriority> {
 
 #[cfg(test)]
 mod tests {
+    use crate::mediator::Mediator;
+
     use super::*;
     use std::cmp::Reverse;
+    use std::collections::hash_map::RandomState;
     use std::collections::{HashMap, HashSet};
 
     fn is_valid_heap<TP: Ord>(heap: &BinaryHeap<TP>) -> bool {
@@ -349,7 +349,7 @@ mod tests {
             -3, -13,
         ];
         let mut maximum = std::i32::MIN;
-        let mut heap = BinaryHeap::<i32>::new();
+        let mut heap = BinaryHeap::<i32>::with_capacity(0);
         assert!(heap.look_into(HeapIndex(0)).is_none());
         assert!(is_valid_heap(&heap), "Heap state is invalid");
         for (key, x) in items
@@ -379,7 +379,7 @@ mod tests {
             78, 81, -45, -41, 91, -34, -33, -31, -27, -22, -19, -8, -5, -3,
         ];
         let mut last_positions = HashMap::<MediatorIndex, HeapIndex>::new();
-        let mut heap = BinaryHeap::<i32>::new();
+        let mut heap = BinaryHeap::<i32>::with_capacity(0);
         let mut on_pos_change = |outer_pos: MediatorIndex, position: HeapIndex| {
             last_positions.insert(outer_pos, position);
         };
@@ -448,7 +448,7 @@ mod tests {
             -12, 33, -26, -49, -45, 24, 47, -29, -25, -45, -36, 40, 24, -29, 15, 36, 0, 47, 3, -45,
         ];
 
-        let mut heap = BinaryHeap::<i32>::new();
+        let mut heap = BinaryHeap::<i32>::with_capacity(0);
         for (i, &x) in items.iter().enumerate() {
             heap.push(MediatorIndex(i), x, |_, _| {});
         }
@@ -478,7 +478,7 @@ mod tests {
             (MediatorIndex(4), 4),
         ];
 
-        let mut heap = BinaryHeap::new();
+        let mut heap = BinaryHeap::with_capacity(0);
         for (key, priority) in pairs.iter().cloned() {
             heap.push(key, priority, |_, _| {});
         }
@@ -501,7 +501,7 @@ mod tests {
             -11, -10, -9, 3, 14, 8, 7, 13, 13, -17, -9, -4, -19, -6, 1, 9, 5, 20, -9, -19, -20,
             -18, -8, 7,
         ];
-        let (heap, key_to_pos) =
+        let (heap, key_to_pos): (_, Mediator<_, RandomState>) =
             BinaryHeap::produce_from_iter_hash(priorities.iter().cloned().map(|x| (x, x)));
         assert!(is_valid_heap(&heap), "Must be valid heap");
         for (map_idx, (key, heap_idx)) in key_to_pos.iter().enumerate() {
@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn test_clear() {
-        let mut heap = BinaryHeap::new();
+        let mut heap = BinaryHeap::with_capacity(0);
         for x in 0..5 {
             heap.push(MediatorIndex(x), x, |_, _| {});
         }
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_change_change_outer_pos() {
-        let mut heap = BinaryHeap::new();
+        let mut heap = BinaryHeap::with_capacity(0);
         for x in 0..5 {
             heap.push(MediatorIndex(x), x, |_, _| {});
         }

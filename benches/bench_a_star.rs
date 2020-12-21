@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::collections::{HashMap, HashSet};
 use std::ops::Index;
 
 #[derive(Eq, PartialEq, Debug, Hash, Copy, Clone, Ord, PartialOrd)]
@@ -76,6 +75,7 @@ fn get_neighbors(pos: Position, field: &Field) -> Neighbours {
 
 mod std_a_star {
     use super::*;
+    use fxhash::{FxHashMap, FxHashSet};
     use std::collections::BinaryHeap;
 
     pub(crate) fn find_path(
@@ -93,7 +93,7 @@ mod std_a_star {
 
         fn restore_path(
             pos: Position,
-            parentize: &HashMap<Position, Position>,
+            parentize: &FxHashMap<Position, Position>,
             start: Position,
         ) -> Vec<Position> {
             let mut result = Vec::new();
@@ -109,13 +109,13 @@ mod std_a_star {
         }
 
         // Child to its parent
-        let mut parentize: HashMap<Position, Position> = HashMap::new();
+        let mut parentize: FxHashMap<Position, Position> = FxHashMap::default();
         // Already checked
-        let mut closed_set: HashSet<Position> = HashSet::new();
+        let mut closed_set: FxHashSet<Position> = FxHashSet::default();
         // Total cost (with estimate), real cost and positions
         let mut available: BinaryHeap<Reverse<(usize, usize, Position)>> = BinaryHeap::new();
         // Position to minimal total cost. Used to decide is need to enter new val into heap
-        let mut remembered_nodes: HashMap<Position, usize> = HashMap::new();
+        let mut remembered_nodes: FxHashMap<Position, usize> = FxHashMap::default();
         available.push(Reverse((0 + calc_heuristic(start), 0, start)));
         while let Some(Reverse((_, current_cost, current_pos))) = available.pop() {
             if current_pos == target {
@@ -153,9 +153,11 @@ mod std_a_star {
 
 mod keyed_a_star {
     use super::*;
+    use fxhash::{FxHashMap, FxHashSet};
     use keyed_priority_queue::{Entry, KeyedPriorityQueue};
+    use std::hash::BuildHasher;
 
-    pub(crate) fn find_path(
+    pub(crate) fn find_path<HasherParam: BuildHasher + Default>(
         start: Position,
         target: Position,
         field: &Field,
@@ -170,7 +172,7 @@ mod keyed_a_star {
 
         fn restore_path(
             pos: Position,
-            parentize: &HashMap<Position, Position>,
+            parentize: &FxHashMap<Position, Position>,
             start: Position,
         ) -> Vec<Position> {
             let mut result = Vec::new();
@@ -186,9 +188,9 @@ mod keyed_a_star {
         }
 
         // Child to its parent
-        let mut parentize: HashMap<Position, Position> = HashMap::new();
+        let mut parentize: FxHashMap<Position, Position> = FxHashMap::default();
         // Already checked
-        let mut closed_set: HashSet<Position> = HashSet::new();
+        let mut closed_set: FxHashSet<Position> = FxHashSet::default();
         // Positions sortered by total cost and real cost.
         // We prefer items with lower real cost if total are same.
         #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -196,7 +198,7 @@ mod keyed_a_star {
             total: usize,
             real: usize,
         }
-        let mut available = KeyedPriorityQueue::<Position, Reverse<Cost>>::new();
+        let mut available = KeyedPriorityQueue::<Position, Reverse<Cost>, HasherParam>::default();
         available.push(
             start,
             Reverse(Cost {
@@ -268,12 +270,25 @@ fn find_path_benchmark(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("STD A Star", end),
             &(start, stop_at, &field),
-            |b, &i| b.iter(|| std_a_star::find_path(i.0, i.1, i.2)),
+            |b, &(start, target, field)| b.iter(|| std_a_star::find_path(start, target, field)),
         );
         group.bench_with_input(
             BenchmarkId::new("Keyed A Star", end),
             &(start, stop_at, &field),
-            |b, &i| b.iter(|| keyed_a_star::find_path(i.0, i.1, i.2)),
+            |b, &(start, target, field)| {
+                b.iter(|| {
+                    keyed_a_star::find_path::<std::collections::hash_map::RandomState>(
+                        start, target, field,
+                    )
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("Keyed A Star FxHash", end),
+            &(start, stop_at, &field),
+            |b, &(start, target, field)| {
+                b.iter(|| keyed_a_star::find_path::<fxhash::FxBuildHasher>(start, target, field))
+            },
         );
     }
     const BIG_SIZE: usize = 500;
@@ -296,7 +311,20 @@ fn find_path_benchmark(c: &mut Criterion) {
     group.bench_with_input(
         BenchmarkId::new("Keyed A Star Ones field", BIG_SIZE),
         &(start, stop_at, &field),
-        |b, _| b.iter(|| keyed_a_star::find_path(start, stop_at, &field_eq)),
+        |b, _| {
+            b.iter(|| {
+                keyed_a_star::find_path::<std::collections::hash_map::RandomState>(
+                    start, stop_at, &field_eq,
+                )
+            })
+        },
+    );
+    group.bench_with_input(
+        BenchmarkId::new("Keyed A Star Ones field FxHash", BIG_SIZE),
+        &(start, stop_at, &field),
+        |b, _| {
+            b.iter(|| keyed_a_star::find_path::<fxhash::FxBuildHasher>(start, stop_at, &field_eq))
+        },
     );
 
     group.finish();
