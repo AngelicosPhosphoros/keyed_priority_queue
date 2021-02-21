@@ -66,13 +66,13 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         &mut self,
         outer_pos: MediatorIndex,
         priority: TPriority,
-        change_handler: TChangeHandler,
+        mut change_handler: TChangeHandler,
     ) {
         self.data.push(HeapEntry {
             outer_pos,
             priority,
         });
-        self.heapify_up(HeapIndex(self.data.len() - 1), change_handler);
+        self.heapify_up(HeapIndex(self.data.len() - 1), &mut change_handler);
     }
 
     /// Removes item at position and returns it
@@ -80,7 +80,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     pub(crate) fn remove<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
-        change_handler: TChangeHandler,
+        mut change_handler: TChangeHandler,
     ) -> Option<(MediatorIndex, TPriority)> {
         if position >= self.len() {
             return None;
@@ -91,7 +91,10 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         }
 
         let result = self.data.swap_remove(position.0);
-        self.heapify_down(position, change_handler);
+        self.heapify_down(position, &mut change_handler);
+        if position.0 > 0 {
+            self.heapify_up(position, &mut change_handler);
+        }
         Some(result.conv_pair())
     }
 
@@ -106,7 +109,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         &mut self,
         position: HeapIndex,
         updated: TPriority,
-        change_handler: TChangeHandler,
+        mut change_handler: TChangeHandler,
     ) -> TPriority {
         debug_assert!(
             position < self.len(),
@@ -116,11 +119,11 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         let old = std::mem::replace(&mut self.data[position.0].priority, updated);
         match old.cmp(&self.data[position.0].priority) {
             Ordering::Less => {
-                self.heapify_up(position, change_handler);
+                self.heapify_up(position, &mut change_handler);
             }
             Ordering::Equal => {}
             Ordering::Greater => {
-                self.heapify_down(position, change_handler);
+                self.heapify_down(position, &mut change_handler);
             }
         }
         old
@@ -210,7 +213,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
         let heapify_start = std::cmp::min(heap_base.len() / 2 + 2, heap_base.len());
         let mut heap = BinaryHeap { data: heap_base };
         for pos in (0..heapify_start).rev().map(HeapIndex) {
-            heap.heapify_down(pos, |_, _| {});
+            heap.heapify_down(pos, &mut |_, _| {});
         }
 
         for (i, pos) in heap.data.iter().map(HeapEntry::to_outer).enumerate() {
@@ -224,7 +227,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     fn heapify_up<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
-        mut change_handler: TChangeHandler,
+        change_handler: &mut TChangeHandler,
     ) {
         debug_assert!(position < self.len(), "Out of index in heapify_up");
         let HeapIndex(mut position) = position;
@@ -243,7 +246,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
     fn heapify_down<TChangeHandler: std::ops::FnMut(MediatorIndex, HeapIndex)>(
         &mut self,
         position: HeapIndex,
-        mut change_handler: TChangeHandler,
+        change_handler: &mut TChangeHandler,
     ) {
         debug_assert!(position < self.len(), "Out of index in heapify_down");
         let HeapIndex(mut position) = position;
@@ -466,6 +469,19 @@ mod tests {
         }
 
         assert_eq!(heap.remove(HeapIndex(0), |_, _| {}), None);
+    }
+
+    #[test]
+    fn test_remove() {
+        let mut heap = BinaryHeap::with_capacity(16);
+        for i in 0..16 {
+            heap.push(MediatorIndex(i), i, |_, _| {});
+        }
+        assert!(is_valid_heap(&heap));
+        for _ in 0..5 {
+            heap.remove(HeapIndex(5), |_, _| {});
+            assert!(is_valid_heap(&heap));
+        }
     }
 
     #[test]

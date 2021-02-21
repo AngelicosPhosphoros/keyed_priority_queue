@@ -1203,4 +1203,26 @@ mod tests {
         }
         assert_eq!(&res, &[(1, 10), (5, 5), (4, 4), (2, 2), (0, 0)]);
     }
+
+    #[test]
+    fn test_remove_change_tree() {
+        use std::cmp::Reverse;
+        let mut queue = KeyedPriorityQueue::new();
+
+        queue.push(0, Reverse(300));
+        queue.push(1, Reverse(500));
+        queue.push(2, Reverse(400));
+        queue.push(3, Reverse(400));
+        queue.push(4, Reverse(600));
+        queue.push(5, Reverse(100));
+        queue.push(6, Reverse(200));
+        queue.remove(&1);
+
+        let mut list = Vec::new();
+        while let Some((_, timestamp)) = queue.pop() {
+            list.push(timestamp.0);
+        }
+
+        assert_eq!(list, [100, 200, 300, 400, 400, 600])
+    }
 }
