@@ -1,5 +1,8 @@
 # Change Log
 
+## 2021-02-21: 0.3.2
+- Fixed bug in priority queue implementation.
+
 ## 2020-12-21: 0.3.1
 - Added ability to use custom hasher
 
