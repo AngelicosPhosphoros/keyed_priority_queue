@@ -1,6 +1,6 @@
 [package]
 name = "keyed_priority_queue"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["AngelicosPhosphoros <xuzin.timur@gmail.com>"]
 edition = "2021"
 description = "Priority queue that support changing priority or early remove by key"
