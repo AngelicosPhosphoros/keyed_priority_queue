@@ -1,0 +1,60 @@
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - github_actions_integration
+  pull_request:
+    branches:
+      - master
+      - develop
+
+name: build and formatters
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt
+      - name: Run cargo fmt
+        run: cargo fmt --all --verbose -- --check
+
+  build_benches:
+    name: Check benches
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo check on benches
+        run: cargo check --benches
+  
+  check_if_can_publish:
+    name: Check publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        name: Setup rust toolchain
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Check publish
+        working-directory: keyed_priority_queue
+        run: cargo publish --dry-run

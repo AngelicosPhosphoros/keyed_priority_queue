@@ -1,0 +1,62 @@
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - github_actions_integration
+  pull_request:
+    branches:
+      - master
+      - develop
+
+name: tests
+
+jobs:
+  ci:
+    name: Run tests
+    runs-on: ${{ matrix.os }}
+    env:
+      RUST_BACKTRACE: '1'
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        rust:
+          - stable
+          - beta
+          - nightly
+          - 1.56.0  # MSRV
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        name: Setup rust toolchain
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Build
+        working-directory: keyed_priority_queue
+        run: cargo build --verbose
+      - name: Test
+        working-directory: keyed_priority_queue
+        run: cargo test --verbose
+
+  miri_tests:
+    name: Run tests with Miri
+    runs-on: ${{ matrix.os }}
+    env:
+      RUST_BACKTRACE: '1'
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        name: Setup rust toolchain
+        with:
+          profile: minimal
+          toolchain: nightly-2021-10-23
+          override: true
+          components: miri
+      - name: Run tests with Miri
+        working-directory: keyed_priority_queue
+        run: cargo miri test -j16 --verbose --all-features
