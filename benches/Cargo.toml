@@ -2,7 +2,7 @@
 name = "benches"
 version = "0.0.0"
 authors = ["AngelicosPhosphoros <xuzin.timur@gmail.com>"]
-edition = "2018"
+edition = "2021"
 publish = false
 
 
