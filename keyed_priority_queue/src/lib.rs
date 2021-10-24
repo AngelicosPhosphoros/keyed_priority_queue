@@ -155,3 +155,7 @@ pub use crate::keyed_priority_queue::{
     Entry, KeyedPriorityQueue, KeyedPriorityQueueBorrowIter, KeyedPriorityQueueIterator,
     OccupiedEntry, SetPriorityNotFoundError, VacantEntry,
 };
+
+#[doc = include_str!("../../Readme.md")]
+#[cfg(doctest)]
+pub struct ReadmeDoctests;
