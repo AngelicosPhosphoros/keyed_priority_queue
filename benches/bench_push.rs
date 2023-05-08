@@ -36,7 +36,7 @@ pub fn bench_push(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -70,7 +70,7 @@ pub fn bench_push(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -104,7 +104,7 @@ pub fn bench_push(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -140,7 +140,7 @@ pub fn bench_push(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }

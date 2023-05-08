@@ -29,7 +29,7 @@ pub fn bench_remove_item(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -58,7 +58,7 @@ pub fn bench_remove_item(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
