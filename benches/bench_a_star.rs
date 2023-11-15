@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::hash::BuildHasherDefault;
 use std::ops::Index;
 
 #[derive(Eq, PartialEq, Debug, Hash, Copy, Clone, Ord, PartialOrd)]
@@ -75,7 +76,7 @@ fn get_neighbors(pos: Position, field: &Field) -> Neighbours {
 
 mod std_a_star {
     use super::*;
-    use fxhash::{FxHashMap, FxHashSet};
+    use rustc_hash::{FxHashMap, FxHashSet};
     use std::collections::BinaryHeap;
 
     pub(crate) fn find_path(
@@ -153,8 +154,8 @@ mod std_a_star {
 
 mod keyed_a_star {
     use super::*;
-    use fxhash::{FxHashMap, FxHashSet};
     use keyed_priority_queue::{Entry, KeyedPriorityQueue};
+    use rustc_hash::{FxHashMap, FxHashSet};
     use std::hash::BuildHasher;
 
     pub(crate) fn find_path<HasherParam: BuildHasher + Default>(
@@ -259,9 +260,11 @@ fn generate_field(size: usize) -> Field {
 }
 
 fn find_path_benchmark(c: &mut Criterion) {
+    use rustc_hash::FxHasher;
+
     let field = generate_field(100);
     let mut group = c.benchmark_group("A_Stars");
-    for &end in &[1, 5, 10, 25, 45, 49, 99] {
+    for &end in &[1, 5, 10, 25, 50, 100] {
         let start = Position { row: 0, column: 0 };
         let stop_at = Position {
             row: end,
@@ -287,7 +290,9 @@ fn find_path_benchmark(c: &mut Criterion) {
             BenchmarkId::new("Keyed A Star FxHash", end),
             &(start, stop_at, &field),
             |b, &(start, target, field)| {
-                b.iter(|| keyed_a_star::find_path::<fxhash::FxBuildHasher>(start, target, field))
+                b.iter(|| {
+                    keyed_a_star::find_path::<BuildHasherDefault<FxHasher>>(start, target, field)
+                })
             },
         );
     }
@@ -323,7 +328,9 @@ fn find_path_benchmark(c: &mut Criterion) {
         BenchmarkId::new("Keyed A Star Ones field FxHash", BIG_SIZE),
         &(start, stop_at, &field),
         |b, _| {
-            b.iter(|| keyed_a_star::find_path::<fxhash::FxBuildHasher>(start, stop_at, &field_eq))
+            b.iter(|| {
+                keyed_a_star::find_path::<BuildHasherDefault<FxHasher>>(start, stop_at, &field_eq)
+            })
         },
     );
 

@@ -18,12 +18,12 @@ use crate::mediator::{
 /// It is logic error if key values changes somehow while in queue.
 /// This changes normally possible only through `Cell`, `RefCell`, global state, IO, or unsafe code.
 ///
-/// If you feel KeyedPriorityQueue slow, it can be because it uses RandomState (relatably slow but strong against HashDoS attack) hasher by default.
-/// You can try [fnv] or [fxhash] crates hashers.
+/// If you feel KeyedPriorityQueue slow, it can be because it uses RandomState (slightly slow but strong against HashDoS attack) hasher by default.
+/// For example, you may try [fnv] or [rustc-hash] crates hashers.
 ///
 /// [`set_priority`]: struct.KeyedPriorityQueue.html#method.set_priority
 /// [fnv]: https://crates.io/crates/fnv
-/// [fxhash]: https://crates.io/crates/fxhash
+/// [rustc-hash]: https://crates.io/crates/rustc-hash
 ///
 /// # Examples
 ///
@@ -52,7 +52,7 @@ use crate::mediator::{
 ///
 /// // We can run consuming iterator on queue,
 /// // and it will return items in decreasing order
-/// for (key, priority) in queue_clone{
+/// for (key, priority) in queue_clone {
 ///     println!("Priority of key {} is {}", key, priority);
 /// }
 ///

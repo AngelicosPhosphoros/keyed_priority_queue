@@ -1,5 +1,9 @@
 # Change Log
 
+## 2023-11-15: 0.4.2
+- Update `indexmap` dependency to 2.1.0
+- Update MSRV to 1.63 to be able to link `indexmap`
+
 ## 2021-10-24: 0.4.1
 - Fixed Readme.md
 
