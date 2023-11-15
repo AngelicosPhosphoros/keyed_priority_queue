@@ -24,7 +24,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.56.0  # MSRV
+          - 1.63.0  # MSRV
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -54,7 +54,7 @@ jobs:
         name: Setup rust toolchain
         with:
           profile: minimal
-          toolchain: nightly-2021-10-23
+          toolchain: nightly-2022-08-11
           override: true
           components: miri
       - name: Run tests with Miri

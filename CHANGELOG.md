@@ -1,5 +1,18 @@
 # Change Log
 
+## 2023-11-15: 0.4.2
+- Update `indexmap` dependency to 2.1.0
+- Update MSRV to 1.63 to be able to link `indexmap`
+
+## 2021-10-24: 0.4.1
+- Fixed Readme.md
+
+## 2021-10-24: 0.4.0
+- Update MSRV to Rust 0.56 and Rust 2021
+- Add MSRV entry into Cargo.toml to make cargo check if Rust version compatible
+- Switch from Travis.CI to GitHub Actions
+- Add code from Readme.md to doctests to make it tested in CI
+
 ## 2021-02-21: 0.3.2
 - Fixed bug in priority queue implementation.
 

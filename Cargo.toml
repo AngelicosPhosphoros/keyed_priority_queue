@@ -6,3 +6,4 @@ members = [
   # Internal
   "benches",
 ]
+resolver = "2"

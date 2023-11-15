@@ -36,7 +36,7 @@ pub fn bench_set_priority(c: &mut Criterion) {
                     }
                     (queue, results_store)
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -72,7 +72,7 @@ pub fn bench_set_priority(c: &mut Criterion) {
                     }
                     (queue, results_store)
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }

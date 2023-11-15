@@ -27,7 +27,7 @@ pub fn bench_pop(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
@@ -54,7 +54,7 @@ pub fn bench_pop(c: &mut Criterion) {
                     }
                     queue
                 },
-                BatchSize::LargeInput,
+                BatchSize::SmallInput,
             );
         });
     }
