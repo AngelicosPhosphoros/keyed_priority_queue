@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Update benchmarks dependencies
+- Update `indexmap` dependency to 2.9.0, leading to benchmark improvements from 10% to 30%
 - Update MSRV to 1.81 (mostly to be able use newer dev-dependencies)
 
 ## 2023-11-15: 0.4.2

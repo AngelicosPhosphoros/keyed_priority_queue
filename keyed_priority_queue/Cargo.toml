@@ -9,10 +9,9 @@ readme = "../Readme.md"
 categories = ["data-structures"]
 keywords = ["priority", "queue", "keyed", "binary", "heap"]
 repository = "https://github.com/AngelicosPhosphoros/keyed_priority_queue"
-documentation = "https://docs.rs/keyed_priority_queue"
 rust-version = "1.81"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-indexmap = "2.1.0"
+indexmap = "2.9.0"
