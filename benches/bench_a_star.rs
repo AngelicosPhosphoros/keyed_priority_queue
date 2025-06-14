@@ -247,7 +247,7 @@ fn generate_field(size: usize) -> Field {
     use rand::prelude::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
     let mut rng = ChaCha8Rng::seed_from_u64(SEED);
-    let dist = rand::distributions::Uniform::new_inclusive(1u32, 10u32);
+    let dist = rand::distr::Uniform::new_inclusive(1u32, 10u32).unwrap();
     let vec: Vec<u32> = (0..size * size)
         .into_iter()
         .map(|_| rng.sample(dist))

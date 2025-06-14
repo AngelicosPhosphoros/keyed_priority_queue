@@ -12,10 +12,10 @@ publish = false
 keyed_priority_queue = { path = "../keyed_priority_queue" }
 
 [dev-dependencies]
-criterion = "0.5"
-rand = "0.8"
-rand_chacha = "0.3"
-rustc-hash = "1.1.0"
+criterion = "0.6"
+rand = "0.9"
+rand_chacha = "0.9"
+rustc-hash = "2.1"
 
 [[bench]]
 name = "bench_push"

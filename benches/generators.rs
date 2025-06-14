@@ -1,5 +1,5 @@
-use rand::prelude::{Rng, SeedableRng};
-use rand::seq::SliceRandom;
+use rand::prelude::{Rng as _, SeedableRng as _};
+use rand::seq::{IndexedRandom as _, SliceRandom as _};
 use rand_chacha::ChaCha8Rng;
 
 const STRING_SIZE: usize = 100;
@@ -7,7 +7,7 @@ const STRING_SIZE: usize = 100;
 #[allow(dead_code)]
 pub(crate) fn gen_random_usizes(n: usize, seed: u64) -> Vec<usize> {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let dist = rand::distributions::Uniform::new_inclusive(1usize, 40_000_000usize);
+    let dist = rand::distr::Uniform::new_inclusive(1usize, 40_000_000usize).unwrap();
     let mut res = Vec::with_capacity(n);
     for _ in 0..n {
         res.push(rng.sample(dist))

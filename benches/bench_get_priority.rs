@@ -1,6 +1,8 @@
 extern crate criterion;
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use keyed_priority_queue::KeyedPriorityQueue;
 
 mod generators;
