@@ -118,6 +118,7 @@ use crate::mediator::{
 /// assert_eq!(queue.pop(), None);
 /// ```
 #[derive(Clone)]
+#[allow(clippy::module_name_repetitions)]
 pub struct KeyedPriorityQueue<TKey, TPriority, S = RandomState>
 where
     TKey: Hash + Eq,
@@ -544,7 +545,7 @@ impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> KeyedPriorityQueue<TKey, T
 
         let (removed_idx, priority) = heap
             .remove(heap_to_rem, |index, heap_idx| {
-                *key_to_pos.get_index_mut(index) = heap_idx
+                *key_to_pos.get_index_mut(index) = heap_idx;
             })
             .expect("Checked by key_to_pos");
         debug_assert_eq!(position, removed_idx);
@@ -568,7 +569,7 @@ impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> KeyedPriorityQueue<TKey, T
         let (_, heap_idx) = key_to_pos.get_index(position);
 
         heap.change_priority(heap_idx, priority, |index, heap_idx| {
-            *key_to_pos.get_index_mut(index) = heap_idx
+            *key_to_pos.get_index_mut(index) = heap_idx;
         })
     }
 }
@@ -624,10 +625,10 @@ where
     /// Up to ***O(log n)*** operations in worst case
     /// ***O(1)*** in best case
     #[inline]
-    pub fn set_priority(mut self, priority: TPriority) -> TPriority {
+    pub fn set_priority(self, priority: TPriority) -> TPriority {
         let heap_idx = self.internal_entry.get_heap_idx();
 
-        let heap = &mut self.heap;
+        let heap = self.heap;
         let key_to_pos = unsafe {
             // Safety: reference used only inside the method and never leaked away
             // This method can be called only when Mediator field alive along with queue itself.
@@ -652,7 +653,7 @@ where
     ///
     /// ## Time complexity
     /// Up to ***O(log n)*** operations
-    pub fn remove(mut self) -> (TKey, TPriority) {
+    pub fn remove(self) -> (TKey, TPriority) {
         let heap_idx = self.internal_entry.get_heap_idx();
         // Look `Mediator` `entry` method
         let key_to_pos = unsafe {
@@ -660,11 +661,11 @@ where
             // This method can be called only when Mediator field alive along with queue itself.
             self.internal_entry.transform_to_map()
         };
-        let heap = &mut self.heap;
+        let heap = self.heap;
 
         let (removed_idx, priority) = heap
             .remove(heap_idx, |index, heap_idx| {
-                *key_to_pos.get_index_mut(index) = heap_idx
+                *key_to_pos.get_index_mut(index) = heap_idx;
             })
             .expect("Checked by key_to_pos");
 
@@ -713,7 +714,7 @@ where
             internal_entry.insert(heap.len())
         };
         heap.push(mediator_index, priority, |index, val| {
-            *key_to_pos.get_index_mut(index) = val
+            *key_to_pos.get_index_mut(index) = val;
         });
     }
 
@@ -810,6 +811,7 @@ impl<TKey: Hash + Eq, TPriority: Ord> IntoIterator for KeyedPriorityQueue<TKey, 
 ///
 /// ### Time complexity
 /// Overall complexity of iteration is ***O(n log n)***
+#[allow(clippy::module_name_repetitions)]
 pub struct KeyedPriorityQueueIterator<TKey, TPriority, S = RandomState>
 where
     TKey: Hash + Eq,
@@ -847,6 +849,7 @@ impl<TKey: Hash + Eq, TPriority: Ord, S: BuildHasher> Iterator
 ///
 /// ### Time complexity
 /// Overall complexity of iteration is ***O(n)***
+#[allow(clippy::module_name_repetitions)]
 pub struct KeyedPriorityQueueBorrowIter<'a, TKey, TPriority, S = RandomState>
 where
     TKey: 'a + Hash + Eq,

@@ -164,7 +164,7 @@ impl<TPriority: Ord> BinaryHeap<TPriority> {
 
     #[inline]
     pub(crate) fn clear(&mut self) {
-        self.data.clear()
+        self.data.clear();
     }
 
     #[inline]

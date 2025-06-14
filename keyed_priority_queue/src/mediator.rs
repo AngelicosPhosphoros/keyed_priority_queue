@@ -7,7 +7,7 @@ use crate::editable_binary_heap::HeapIndex;
 
 /// Wrapper around possible outer vec index
 /// Used to avoid mux up with heap index
-/// And to make sure that `Mediator` indexed only with MediatorIndex
+/// And to make sure that `Mediator` indexed only with `MediatorIndex`
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Hash)]
 pub(crate) struct MediatorIndex(pub(crate) usize);
 
@@ -52,7 +52,7 @@ where
 
     #[inline(always)]
     pub(crate) fn reserve(&mut self, additional: usize) {
-        self.map.reserve(additional)
+        self.map.reserve(additional);
     }
 
     #[inline(always)]
@@ -67,7 +67,7 @@ where
 
     #[inline(always)]
     pub(crate) fn clear(&mut self) {
-        self.map.clear()
+        self.map.clear();
     }
 
     #[inline(always)]

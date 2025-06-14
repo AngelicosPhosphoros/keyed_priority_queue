@@ -147,6 +147,8 @@
 //! ```
 //!
 
+#![allow(clippy::uninlined_format_args)]
+
 mod editable_binary_heap;
 mod keyed_priority_queue;
 mod mediator;
